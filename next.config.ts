@@ -17,6 +17,7 @@ const nextConfig: NextConfig = {
 
   // Used by `next build` (webpack-based production build).
   // Prevents LangChain from being bundled into the browser bundle.
+  // Prevents Phaser from being imported in the Node.js server bundle.
   webpack: (config, { isServer }) => {
     if (!isServer) {
       config.resolve.alias = {
@@ -25,6 +26,12 @@ const nextConfig: NextConfig = {
         "@langchain/openai": false,
         "@langchain/google-genai": false,
         "@langchain/langgraph": false,
+      };
+    }
+    if (isServer) {
+      config.resolve.alias = {
+        ...config.resolve.alias,
+        phaser: false,
       };
     }
     return config;
