@@ -1,0 +1,110 @@
+// ---- Concept Graph (Agent 1 output) ----
+
+export interface Relation {
+  subject: string;
+  verb: string;
+  object: string;
+}
+
+export interface ConceptGraph {
+  entities: string[];
+  relations: Relation[];
+  confidence: number;
+}
+
+// ---- Micro-Rhetoric Selection (Agent 2 output) ----
+
+export interface MicroRhetoricSelectionItem {
+  relation: string;
+  micro_rhetoric: string;
+  component: string;
+  justification: string;
+}
+
+export interface MicroRhetoricsSelection {
+  selections: MicroRhetoricSelectionItem[];
+}
+
+// ---- Recipe Selection (Agent 3 output) ----
+
+export interface RecipeSelection {
+  win_recipe: string;
+  lose_recipe: string;
+  structure_recipe: string;
+  patch_recipes: string[];
+  justifications: Record<string, string>;
+}
+
+// ---- Entity (assembled after Agent 3) ----
+
+export interface EntitySpec {
+  name: string;
+  isPlayer: boolean;
+  components: string[];
+  parameters: Record<string, string | number>;
+}
+
+// ---- Verifier Report (Agent 4 output) ----
+
+export type RepairOperator =
+  | "AddComponent"
+  | "RemoveComponent"
+  | "ReplaceComponent"
+  | "AdjustParameter"
+  | "AssignPlayer";
+
+export interface RepairAction {
+  operator: RepairOperator;
+  target: string;
+  from?: string;
+  to?: string;
+  parameter?: string;
+  value?: string | number;
+}
+
+export interface VerifierReport {
+  issues: string[];
+  repairs: RepairAction[];
+  playable: boolean;
+}
+
+// ---- Rhetoric Critique (Agent 5 output) ----
+
+export interface SuggestedSwap {
+  entity: string;
+  replace: string;
+  with: string;
+}
+
+export interface RhetoricCritique {
+  alignment_score: number;
+  interpretation: string;
+  mismatches: string[];
+  suggested_swaps: SuggestedSwap[];
+}
+
+// ---- Top-level GameState (client-side accumulator) ----
+
+export interface GameState {
+  step: number;
+  input: string;
+  conceptGraph?: ConceptGraph;
+  microRhetoricsSelection?: MicroRhetoricsSelection;
+  recipeSelection?: RecipeSelection;
+  entities?: EntitySpec[];
+  verifierReport?: VerifierReport;
+  rhetoricCritique?: RhetoricCritique;
+  xmlOutput?: string;
+}
+
+// ---- API contract ----
+
+export interface StepRequest {
+  step: number;
+  state: GameState;
+}
+
+export interface StepResponse {
+  state: GameState;
+  error?: string;
+}
