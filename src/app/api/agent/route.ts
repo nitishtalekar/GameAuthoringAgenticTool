@@ -31,8 +31,7 @@ export async function POST(req: NextRequest) {
     const llm = createOpenAIModel({ temperature: 0.7 });
 
     const agentNode = buildAgentNode(llm, {
-      systemPrompt:
-        "You are an expert game designer helping to author interactive game narratives.",
+      systemPrompt: "Respond as a pirate",
     });
 
     const graph = buildGraph({
