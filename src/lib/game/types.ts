@@ -94,6 +94,8 @@ export interface GameState {
   entities?: EntitySpec[];
   verifierReport?: VerifierReport;
   rhetoricCritique?: RhetoricCritique;
+  rhetoricSwapApplied?: boolean;
+  postSwapRhetoricCritique?: RhetoricCritique;
   xmlOutput?: string;
 }
 

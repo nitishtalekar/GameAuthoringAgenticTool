@@ -7,6 +7,7 @@ import {
   buildRecipeAgent,
   buildVerifierAgent,
   buildRhetoricCriticAgent,
+  buildRhetoricSwapAgent,
   buildXmlGenerationAgent,
 } from "@/lib/game/agents";
 import { validateXml, serializeToXml } from "@/lib/game/xml-generator";
@@ -36,9 +37,9 @@ export async function POST(req: NextRequest): Promise<NextResponse<StepResponse>
     const body = (await req.json()) as StepRequest;
     const { step, state } = body;
 
-    if (!step || step < 1 || step > 6) {
+    if (!step || step < 1 || (step > 6 && step !== 55)) {
       return NextResponse.json(
-        { state, error: "Invalid step number. Must be between 1 and 6." },
+        { state, error: "Invalid step number. Must be between 1 and 6 (or 55 for rhetoric swap)." },
         { status: 400 }
       );
     }
@@ -69,6 +70,8 @@ async function runStep(step: number, state: GameState): Promise<GameState> {
       return runAgent4(state);
     case 5:
       return runAgent5(state);
+    case 55:
+      return runAgent5b(state);
     case 6:
       return runAgent6(state);
     default:
@@ -237,6 +240,77 @@ Evaluate how well the game mechanics express the intended rhetorical meaning.`;
   return { ...state, step: 5, rhetoricCritique };
 }
 
+async function runAgent5b(state: GameState): Promise<GameState> {
+  if (!state.entities || !state.rhetoricCritique) {
+    throw new Error("Step 5.5 requires step 5 (rhetoric critique) to be completed first.");
+  }
+
+  // Apply suggested swaps via swap agent
+  const swapNode = buildRhetoricSwapAgent();
+  const swapGraph = buildGraph({
+    nodes: [{ name: "swap", fn: swapNode }],
+    edges: [{ from: "swap", to: "END" }],
+    entryPoint: "swap",
+  });
+
+  const swapMsg = `Current entities:
+${JSON.stringify(state.entities, null, 2)}
+
+Suggested swaps from rhetoric critic:
+${JSON.stringify(state.rhetoricCritique.suggested_swaps, null, 2)}
+
+Apply these swaps and return the updated entities list.`;
+
+  const swapResult = await runGraph(swapGraph, {
+    messages: [human(swapMsg)],
+  });
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const swapOutput = parseJson<any>(
+    getLastMessageContent(swapResult.messages),
+    "Agent 5b (Rhetoric Swap)"
+  );
+  const swappedEntities: GameState["entities"] = swapOutput.entities ?? state.entities;
+
+  // Re-run rhetoric critique on updated entities
+  const criticNode = buildRhetoricCriticAgent();
+  const criticGraph = buildGraph({
+    nodes: [{ name: "critic", fn: criticNode }],
+    edges: [{ from: "critic", to: "END" }],
+    entryPoint: "critic",
+  });
+
+  const criticMsg = `Original user concept (intended meaning): ${state.input}
+
+Original concept graph:
+${JSON.stringify(state.conceptGraph, null, 2)}
+
+Final game mechanics (what the game actually simulates):
+Entities: ${JSON.stringify(swappedEntities, null, 2)}
+Recipes: ${JSON.stringify(state.recipeSelection, null, 2)}
+Verifier report: ${JSON.stringify(state.verifierReport, null, 2)}
+
+Evaluate how well the game mechanics express the intended rhetorical meaning.`;
+
+  const criticResult = await runGraph(criticGraph, {
+    messages: [human(criticMsg)],
+  });
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const postSwapRhetoricCritique = parseJson<any>(
+    getLastMessageContent(criticResult.messages),
+    "Agent 5c (Post-Swap Rhetoric Critic)"
+  );
+
+  return {
+    ...state,
+    step: 5, // keep step at 5 so "Next — Step 6" button remains visible
+    entities: swappedEntities,
+    rhetoricSwapApplied: true,
+    postSwapRhetoricCritique,
+  };
+}
+
 async function runAgent6(state: GameState): Promise<GameState> {
   if (!state.entities || !state.recipeSelection) {
     throw new Error("Agent 6 requires steps 1–5 to be completed first.");
@@ -268,8 +342,8 @@ Verifier repairs applied:
 ${JSON.stringify(state.verifierReport?.repairs, null, 2)}
 
 Rhetoric critique:
-Alignment score: ${state.rhetoricCritique?.alignment_score ?? "N/A"}
-Interpretation: ${state.rhetoricCritique?.interpretation ?? "N/A"}
+Alignment score: ${(state.postSwapRhetoricCritique ?? state.rhetoricCritique)?.alignment_score ?? "N/A"}
+Interpretation: ${(state.postSwapRhetoricCritique ?? state.rhetoricCritique)?.interpretation ?? "N/A"}
 
 Generate the complete XML game specification now.`;
 

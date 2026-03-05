@@ -130,6 +130,8 @@ OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no
  */
 export function buildVerifierAgent(): NodeFunction {
   const llm = createOpenAIModel({ temperature: 0.1 });
+  const componentLibrary = formatMicroRhetoricsForPrompt();
+  const recipeLibrary = formatRecipesForPrompt();
 
   const systemPrompt = `You are a playability verifier and repair agent for the Game-O-Matic system.
 Analyze the assembled game specification and identify issues that would prevent a player from engaging or winning.
@@ -142,6 +144,9 @@ PLAYABILITY CHECKLIST:
 3. Win condition is achievable given current mechanics
 4. Lose condition is distinct from win condition
 5. At least one entity has a movement component
+
+AVAILABLE COMPONENTS (repairs must only reference component names from this list):
+${componentLibrary}
 
 If all checks pass, set playable to true and return empty issues/repairs arrays.
 If issues exist, list them and propose the minimal repairs needed to fix them.
@@ -171,6 +176,8 @@ OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no
  */
 export function buildRhetoricCriticAgent(): NodeFunction {
   const llm = createOpenAIModel({ temperature: 0.4 });
+  const componentLibrary = formatMicroRhetoricsForPrompt();
+  const recipeLibrary = formatRecipesForPrompt();
 
   const systemPrompt = `You are a rhetoric critic agent for the Game-O-Matic system.
 Compare the original concept graph (what the author intended) against the final mechanics graph (what the game actually simulates).
@@ -182,7 +189,15 @@ SCORING GUIDE:
 - alignment_score 1.0 = mechanics perfectly and clearly express the intended concept
 
 mismatches: specific places where mechanics contradict or miss the intended idea
-suggested_swaps: minimal component-level changes to improve alignment (use only components from the existing specification)
+suggested_swaps: minimal component-level changes to improve alignment
+
+AVAILABLE COMPONENTS (suggested_swaps must only reference component names from this list):
+${componentLibrary}
+
+AVAILABLE RECIPES (for context):
+${recipeLibrary}
+
+CONSTRAINT: The "replace" and "with" fields in suggested_swaps must be exact component names from the AVAILABLE COMPONENTS list above.
 
 OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no markdown fences, no extra text:
 {
@@ -191,6 +206,39 @@ OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no
   "mismatches": ["description of mismatch"],
   "suggested_swaps": [
     { "entity": "EntityName", "replace": "OldComponent", "with": "NewComponent" }
+  ]
+}`;
+
+  return buildAgentNode(llm, { systemPrompt });
+}
+
+/**
+ * Agent 5b — Rhetoric Swap Agent
+ *
+ * Applies suggested component swaps from the Rhetoric Critic to the entity
+ * list, producing an updated EntitySpec[] with improved rhetorical alignment.
+ */
+export function buildRhetoricSwapAgent(): NodeFunction {
+  const llm = createOpenAIModel({ temperature: 0.1 });
+  const componentLibrary = formatMicroRhetoricsForPrompt();
+
+  const systemPrompt = `You are a rhetoric swap agent for the Game-O-Matic system.
+You are given a list of entities with their current components, and a list of suggested_swaps from the rhetoric critic.
+Apply each swap: for the specified entity, replace the component named in "replace" with the component named in "with".
+Only modify the components listed in the swaps. Preserve all other entity data (name, isPlayer, parameters) exactly as given.
+
+AVAILABLE COMPONENTS (the "with" values must be exact component names from this list):
+${componentLibrary}
+
+OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no markdown fences, no extra text:
+{
+  "entities": [
+    {
+      "name": "string",
+      "isPlayer": true,
+      "components": ["string"],
+      "parameters": { "speed": 100, "size": 32, "spawnRate": 1.5 }
+    }
   ]
 }`;
 
