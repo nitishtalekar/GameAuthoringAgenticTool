@@ -4,7 +4,7 @@ import { useState, useCallback } from "react";
 import dynamic from "next/dynamic";
 import type { ParsedGame } from "@/lib/game/xml-parser";
 import { parseGameXml } from "@/lib/game/xml-parser";
-import { dominantBehavior } from "@/data/component-behaviors";
+import { mergeBehaviors, getBehavior } from "@/data/component-behaviors";
 
 // GameCanvas imports Phaser at module level — must never be server-rendered
 const GameCanvas = dynamic(() => import("./GameCanvas"), { ssr: false });
@@ -124,7 +124,7 @@ function GameInfoPanel({ game }: { game: ParsedGame }) {
             const relComponents = game.relations
               .filter((r) => r.from === ent.name)
               .map((r) => r.component);
-            const behavior = dominantBehavior(relComponents);
+            const behavior = mergeBehaviors([...ent.components, ...relComponents]);
             return (
               <span
                 key={ent.name}
@@ -154,6 +154,204 @@ function GameInfoPanel({ game }: { game: ParsedGame }) {
           Move: Arrow keys or WASD
         </p>
       </div>
+    </div>
+  );
+}
+
+function GameStructurePanel({ game }: { game: ParsedGame }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div
+      style={{
+        marginTop: 12,
+        border: "1px solid #e5e7eb",
+        borderRadius: 6,
+        overflow: "hidden",
+        fontSize: 13,
+      }}
+    >
+      {/* Toggle header */}
+      <button
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "10px 14px",
+          background: "#f9fafb",
+          border: "none",
+          cursor: "pointer",
+          fontSize: 13,
+          fontWeight: 600,
+          color: "#374151",
+          textAlign: "left",
+        }}
+      >
+        <span>Game Structure</span>
+        <span style={{ fontSize: 11, color: "#9ca3af" }}>{open ? "▲ hide" : "▼ show"}</span>
+      </button>
+
+      {open && (
+        <div style={{ padding: "14px 16px", background: "#fff" }}>
+          {/* Entities */}
+          <div style={{ marginBottom: 20 }}>
+            <h4 style={{ margin: "0 0 10px", fontSize: 13, color: "#6b7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              Entities
+            </h4>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {game.entities.map((ent) => {
+                const relComponents = game.relations
+                  .filter((r) => r.from === ent.name)
+                  .map((r) => r.component);
+                const dominant = mergeBehaviors([...ent.components, ...relComponents]);
+                return (
+                  <div
+                    key={ent.name}
+                    style={{
+                      padding: "10px 12px",
+                      border: "1px solid #e5e7eb",
+                      borderRadius: 6,
+                      background: "#fafafa",
+                    }}
+                  >
+                    {/* Entity header */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                      <span
+                        style={{
+                          display: "inline-block",
+                          width: 12,
+                          height: 12,
+                          background: ent.isPlayer ? "#3498db" : hexToCss(dominant.color),
+                          borderRadius: 2,
+                          flexShrink: 0,
+                        }}
+                      />
+                      <strong style={{ fontSize: 14 }}>{ent.displayName}</strong>
+                      <span style={{ color: "#9ca3af", fontSize: 11 }}>({ent.name})</span>
+                      {ent.isPlayer && (
+                        <span
+                          style={{
+                            marginLeft: 4,
+                            padding: "1px 6px",
+                            background: "#dbeafe",
+                            color: "#1d4ed8",
+                            borderRadius: 10,
+                            fontSize: 11,
+                            fontWeight: 600,
+                          }}
+                        >
+                          player
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Component chips */}
+                    {ent.components.length > 0 && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
+                        {ent.components.map((comp) => {
+                          const beh = getBehavior(comp);
+                          return (
+                            <span
+                              key={comp}
+                              title={beh.description}
+                              style={{
+                                padding: "2px 8px",
+                                background: hexToCss(beh.color) + "22",
+                                border: `1px solid ${hexToCss(beh.color)}66`,
+                                color: "#1a1a2e",
+                                borderRadius: 10,
+                                fontSize: 11,
+                                fontFamily: "monospace",
+                              }}
+                            >
+                              {comp}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Params */}
+                    <div style={{ display: "flex", gap: 12, color: "#6b7280", fontSize: 12 }}>
+                      {Object.entries(ent.params).map(([k, v]) => (
+                        <span key={k}>
+                          <span style={{ fontWeight: 500 }}>{k}:</span> {v}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Relations */}
+          {game.relations.length > 0 && (
+            <div>
+              <h4 style={{ margin: "0 0 10px", fontSize: 13, color: "#6b7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                Relations
+              </h4>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                <thead>
+                  <tr style={{ background: "#f3f4f6" }}>
+                    {["From", "Verb", "To", "Micro-Rhetoric", "Component"].map((h) => (
+                      <th
+                        key={h}
+                        style={{
+                          padding: "6px 10px",
+                          textAlign: "left",
+                          fontWeight: 600,
+                          color: "#374151",
+                          borderBottom: "1px solid #e5e7eb",
+                        }}
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {game.relations.map((rel, i) => {
+                    const beh = getBehavior(rel.component);
+                    return (
+                      <tr
+                        key={i}
+                        style={{ borderBottom: "1px solid #f3f4f6", background: i % 2 === 0 ? "#fff" : "#fafafa" }}
+                      >
+                        <td style={{ padding: "6px 10px", fontWeight: 500 }}>
+                          {game.entities.find((e) => e.name === rel.from)?.displayName ?? rel.from}
+                        </td>
+                        <td style={{ padding: "6px 10px", color: "#6b7280", fontStyle: "italic" }}>{rel.verb}</td>
+                        <td style={{ padding: "6px 10px", fontWeight: 500 }}>
+                          {game.entities.find((e) => e.name === rel.to)?.displayName ?? rel.to}
+                        </td>
+                        <td style={{ padding: "6px 10px", color: "#6b7280" }}>{rel.microRhetoric}</td>
+                        <td style={{ padding: "6px 10px" }}>
+                          <span
+                            title={beh.description}
+                            style={{
+                              padding: "2px 7px",
+                              background: hexToCss(beh.color) + "22",
+                              border: `1px solid ${hexToCss(beh.color)}66`,
+                              borderRadius: 10,
+                              fontSize: 11,
+                              fontFamily: "monospace",
+                            }}
+                          >
+                            {rel.component}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -345,6 +543,9 @@ export default function PlayGamePage() {
 
           {/* Canvas */}
           <GameCanvas parsedGame={parsedGame} onStatusChange={handleStatusChange} />
+
+          {/* Parsed game structure — entities, components, relations */}
+          <GameStructurePanel game={parsedGame} />
         </section>
       )}
 

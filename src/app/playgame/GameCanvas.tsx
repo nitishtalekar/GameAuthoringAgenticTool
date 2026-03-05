@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import Phaser from "phaser";
 import type { ParsedGame, ParsedEntity, ParsedSpawn } from "@/lib/game/xml-parser";
-import { dominantBehavior, type ComponentBehavior } from "@/data/component-behaviors";
+import { mergeBehaviors, type ComponentBehavior } from "@/data/component-behaviors";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -13,6 +13,19 @@ interface GameCanvasProps {
   parsedGame: ParsedGame;
   onStatusChange: (status: "playing" | "won" | "lost", message: string) => void;
 }
+
+// Per-instance state stored directly on each spawned rectangle
+type EnemyRect = Phaser.GameObjects.Rectangle & {
+  _label?: Phaser.GameObjects.Text;
+  /** Patrol direction: +1 = right, -1 = left */
+  _patrolDir: number;
+  _patrolMinX: number;
+  _patrolMaxX: number;
+  /** Current speed (grows for accelerator entities) */
+  _currentSpeed: number;
+  /** Wanderer: seconds until next direction change */
+  _wanderTimer: number;
+};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -44,11 +57,12 @@ function zoneCoords(zone: ParsedSpawn["zone"], size: number): { x: number; y: nu
 }
 
 // ---------------------------------------------------------------------------
-// Entity group entry — keeps entity metadata alongside its Phaser group
+// Entity group entry
 // ---------------------------------------------------------------------------
 
 interface EntityGroup {
   entity: ParsedEntity;
+  /** Merged behavior from ALL components (intrinsic + relational) */
   behavior: ComponentBehavior;
   group: Phaser.Physics.Arcade.Group;
 }
@@ -64,10 +78,7 @@ class GameScene extends Phaser.Scene {
   private player!: Phaser.GameObjects.Rectangle;
   private playerLabel!: Phaser.GameObjects.Text;
 
-  // All dynamic non-player groups with their metadata
   private entityGroups: EntityGroup[] = [];
-
-  // Static obstacles
   private obstacleGroup!: Phaser.Physics.Arcade.StaticGroup;
 
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -86,6 +97,7 @@ class GameScene extends Phaser.Scene {
   private deadEnemies = 0;
   private gameOver = false;
   private invincible = false;
+  private playerFrozen = false;
 
   private hudHealth!: Phaser.GameObjects.Text;
   private hudTimer!: Phaser.GameObjects.Text;
@@ -120,7 +132,6 @@ class GameScene extends Phaser.Scene {
     this.physics.add.existing(this.player);
     (this.player.body as Phaser.Physics.Arcade.Body).setCollideWorldBounds(true);
 
-    // Player name label
     this.playerLabel = this.add
       .text(px, py - playerSize / 2 - 10, playerEnt.displayName, {
         fontSize: "10px",
@@ -148,11 +159,12 @@ class GameScene extends Phaser.Scene {
     entities
       .filter((e) => !e.isPlayer)
       .forEach((ent) => {
-        // Collect all component types from relations where this entity is "from"
+        // Merge ALL components: intrinsic (entity.components) + relational (relations)
+        const intrinsicComponents = ent.components;
         const relComponents = relations
           .filter((r) => r.from === ent.name)
           .map((r) => r.component);
-        const behavior = dominantBehavior(relComponents);
+        const behavior = mergeBehaviors([...intrinsicComponents, ...relComponents]);
 
         if (behavior.isStatic) {
           const spawnsForEnt = layout.spawns.filter((s) => s.entity === ent.name);
@@ -176,6 +188,9 @@ class GameScene extends Phaser.Scene {
         const group = this.physics.add.group();
 
         const spawnsForEnt = layout.spawns.filter((s) => s.entity === ent.name);
+        const spawnZone: ParsedSpawn["zone"] =
+          spawnsForEnt.length > 0 ? spawnsForEnt[0].zone : "right";
+
         if (spawnsForEnt.length === 0) {
           this.spawnEnemy(group, ent, behavior, "right");
           this.totalEnemies++;
@@ -196,6 +211,20 @@ class GameScene extends Phaser.Scene {
           });
         }
 
+        // Spawner: create clones on interval (driven by spawnRate param)
+        if (behavior.spawnsOnInterval) {
+          const spawnRateMs = (ent.params.spawnRate ?? 3.0) * 1000;
+          this.time.addEvent({
+            delay: spawnRateMs,
+            callback: () => {
+              if (this.gameOver) return;
+              this.spawnEnemy(group, ent, behavior, spawnZone);
+              this.totalEnemies++;
+            },
+            loop: true,
+          });
+        }
+
         this.entityGroups.push({ entity: ent, behavior, group });
       });
 
@@ -207,12 +236,20 @@ class GameScene extends Phaser.Scene {
 
     // Player vs each entity group — driven by behavior flags
     this.entityGroups.forEach(({ behavior, group }) => {
-      if (behavior.removeOnContact || behavior.damagesPlayer || behavior.scoreOnContact) {
+      if (
+        behavior.removeOnContact ||
+        behavior.damagesPlayer ||
+        behavior.scoreOnContact ||
+        behavior.growsOnContact ||
+        behavior.shrinksPlayerOnContact ||
+        behavior.pushesPlayerOnContact ||
+        behavior.freezesPlayerOnContact
+      ) {
         this.physics.add.overlap(
           this.player,
           group,
           (_player, obj) => {
-            const rect = obj as Phaser.GameObjects.Rectangle;
+            const rect = obj as EnemyRect;
             this.onEntityContact(rect, behavior);
           }
         );
@@ -256,7 +293,6 @@ class GameScene extends Phaser.Scene {
     const rect = this.add.rectangle(x, y, size, size, 0x7f8c8d);
     this.physics.add.existing(rect, true);
     this.obstacleGroup.add(rect);
-    // Name label on obstacle
     this.add
       .text(x, y, ent.displayName, {
         fontSize: "9px",
@@ -274,15 +310,21 @@ class GameScene extends Phaser.Scene {
     ent: ParsedEntity,
     behavior: ComponentBehavior,
     zone: ParsedSpawn["zone"]
-  ): Phaser.GameObjects.Rectangle {
+  ): EnemyRect {
     const size = ent.params.size ?? 32;
     const { x, y } = zoneCoords(zone, size);
-    const rect = this.add.rectangle(x, y, size, size, behavior.color);
+    const rect = this.add.rectangle(x, y, size, size, behavior.color) as EnemyRect;
     this.physics.add.existing(rect);
     (rect.body as Phaser.Physics.Arcade.Body).setCollideWorldBounds(true);
     group.add(rect);
 
-    // Name label above the entity
+    // Per-instance state
+    rect._patrolDir = Math.random() > 0.5 ? 1 : -1;
+    rect._patrolMinX = Math.max(size / 2, x - 120);
+    rect._patrolMaxX = Math.min(CANVAS_W - size / 2, x + 120);
+    rect._currentSpeed = ent.params.speed ?? 80;
+    rect._wanderTimer = 1.5 + Math.random(); // seconds until first direction change
+
     const label = this.add
       .text(x, y - size / 2 - 10, ent.displayName, {
         fontSize: "10px",
@@ -294,24 +336,19 @@ class GameScene extends Phaser.Scene {
       .setOrigin(0.5, 1)
       .setDepth(5);
 
-    // Store label reference on the rect so we can track it in update
-    (rect as Phaser.GameObjects.Rectangle & { _label?: Phaser.GameObjects.Text })._label = label;
-
+    rect._label = label;
     return rect;
   }
 
   // ---------------------------------------------------------------------------
-  // Collision handler — driven entirely by ComponentBehavior flags
+  // Collision handler
   // ---------------------------------------------------------------------------
 
-  private onEntityContact(
-    entity: Phaser.GameObjects.Rectangle,
-    behavior: ComponentBehavior
-  ) {
+  private onEntityContact(entity: EnemyRect, behavior: ComponentBehavior) {
     if (this.gameOver) return;
 
-    if (behavior.damagesPlayer) {
-      if (this.invincible) return;
+    // Damage player — gated by invincibility window
+    if (behavior.damagesPlayer && !this.invincible) {
       this.health = Math.max(0, this.health - 1);
       this.hudHealth.setText(`HP: ${this.health}`);
       this.tweens.add({
@@ -326,22 +363,51 @@ class GameScene extends Phaser.Scene {
       if (this.health <= 0) this.triggerLose("You were defeated!");
     }
 
+    // Score
     if (behavior.scoreOnContact) {
       this.score++;
       this.hudScore.setText(`Score: ${this.score}`);
     }
 
+    // Entity grows (NOT the player)
     if (behavior.growsOnContact) {
-      const newW = (this.player.width as number) + 4;
-      const newH = (this.player.height as number) + 4;
+      const newW = (entity.width as number) + 6;
+      const newH = (entity.height as number) + 6;
+      entity.setSize(newW, newH);
+      (entity.body as Phaser.Physics.Arcade.Body).setSize(newW, newH);
+    }
+
+    // Player shrinks
+    if (behavior.shrinksPlayerOnContact) {
+      const minSize = 10;
+      const newW = Math.max(minSize, (this.player.width as number) - 6);
+      const newH = Math.max(minSize, (this.player.height as number) - 6);
       this.player.setSize(newW, newH);
       (this.player.body as Phaser.Physics.Arcade.Body).setSize(newW, newH);
     }
 
+    // Knockback
+    if (behavior.pushesPlayerOnContact) {
+      const dx = this.player.x - entity.x;
+      const dy = this.player.y - entity.y;
+      const len = Math.sqrt(dx * dx + dy * dy) || 1;
+      const knockback = 350;
+      (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(
+        (dx / len) * knockback,
+        (dy / len) * knockback
+      );
+    }
+
+    // Freeze player
+    if (behavior.freezesPlayerOnContact && !this.playerFrozen) {
+      this.playerFrozen = true;
+      (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
+      this.time.delayedCall(1200, () => { this.playerFrozen = false; });
+    }
+
+    // Remove entity
     if (behavior.removeOnContact) {
-      // Clean up the floating label if present
-      const labeled = entity as Phaser.GameObjects.Rectangle & { _label?: Phaser.GameObjects.Text };
-      labeled._label?.destroy();
+      entity._label?.destroy();
       entity.destroy();
       this.deadEnemies++;
     }
@@ -402,61 +468,110 @@ class GameScene extends Phaser.Scene {
   // Update loop
   // ---------------------------------------------------------------------------
 
-  update(_time: number, _delta: number) {
+  update(_time: number, delta: number) {
     if (this.gameOver) return;
 
     const speed = this.playerEntity.params.speed ?? 150;
     const body = this.player.body as Phaser.Physics.Arcade.Body;
 
-    // --- Player movement ---
-    const left = this.cursors.left.isDown || this.wasdKeys.left.isDown;
-    const right = this.cursors.right.isDown || this.wasdKeys.right.isDown;
-    const up = this.cursors.up.isDown || this.wasdKeys.up.isDown;
-    const down = this.cursors.down.isDown || this.wasdKeys.down.isDown;
+    // --- Player movement (blocked while frozen) ---
+    if (this.playerFrozen) {
+      body.setVelocity(0, 0);
+    } else {
+      const left = this.cursors.left.isDown || this.wasdKeys.left.isDown;
+      const right = this.cursors.right.isDown || this.wasdKeys.right.isDown;
+      const up = this.cursors.up.isDown || this.wasdKeys.up.isDown;
+      const down = this.cursors.down.isDown || this.wasdKeys.down.isDown;
 
-    let vx = 0;
-    let vy = 0;
-    if (left) vx -= speed;
-    if (right) vx += speed;
-    if (up) vy -= speed;
-    if (down) vy += speed;
+      let vx = 0;
+      let vy = 0;
+      if (left) vx -= speed;
+      if (right) vx += speed;
+      if (up) vy -= speed;
+      if (down) vy += speed;
 
-    if (vx !== 0 && vy !== 0) {
-      const f = 1 / Math.SQRT2;
-      vx *= f;
-      vy *= f;
+      if (vx !== 0 && vy !== 0) {
+        const f = 1 / Math.SQRT2;
+        vx *= f;
+        vy *= f;
+      }
+      body.setVelocity(vx, vy);
     }
-    body.setVelocity(vx, vy);
 
     // Sync player label
     this.playerLabel.setPosition(this.player.x, this.player.y - this.player.height / 2 - 10);
 
-    // --- AI movement driven by behavior flags ---
-    this.entityGroups.forEach(({ entity: ent, behavior, group }) => {
+    // --- AI movement and time-based effects ---
+    this.entityGroups.forEach(({ behavior, group }) => {
       group.getChildren().forEach((child) => {
-        const enemy = child as Phaser.GameObjects.Rectangle & { _label?: Phaser.GameObjects.Text };
-        const entSpeed = ent.params.speed ?? 80;
+        const enemy = child as EnemyRect;
+        if (!enemy.active) return;
+        const eb = enemy.body as Phaser.Physics.Arcade.Body;
 
+        // Accelerate over time — increase stored speed each second
+        if (behavior.acceleratesOverTime) {
+          enemy._currentSpeed = Math.min(enemy._currentSpeed + (5 * delta / 1000), 400);
+        }
+        const entSpeed = enemy._currentSpeed;
+
+        // Movement (priority order: chase > flee > patrol > wander)
         if (behavior.movesTowardPlayer) {
           this.physics.moveToObject(enemy, this.player, entSpeed);
+
         } else if (behavior.movesAwayFromPlayer) {
           const dx = enemy.x - this.player.x;
           const dy = enemy.y - this.player.y;
           const len = Math.sqrt(dx * dx + dy * dy) || 1;
-          (enemy.body as Phaser.Physics.Arcade.Body).setVelocity(
-            (dx / len) * entSpeed,
-            (dy / len) * entSpeed
-          );
+          eb.setVelocity((dx / len) * entSpeed, (dy / len) * entSpeed);
+
+        } else if (behavior.patrolsBackAndForth) {
+          // Reverse direction at patrol bounds
+          if (
+            (enemy._patrolDir > 0 && enemy.x >= enemy._patrolMaxX) ||
+            (enemy._patrolDir < 0 && enemy.x <= enemy._patrolMinX)
+          ) {
+            enemy._patrolDir *= -1;
+          }
+          eb.setVelocity(enemy._patrolDir * entSpeed, 0);
+
         } else if (behavior.role === "wanderer") {
-          // Re-randomize direction occasionally
-          const eb = enemy.body as Phaser.Physics.Arcade.Body;
-          if (Math.abs(eb.velocity.x) < 5 && Math.abs(eb.velocity.y) < 5) {
+          // Timer-based direction change (every 1.5–2.5 seconds)
+          enemy._wanderTimer -= delta / 1000;
+          if (enemy._wanderTimer <= 0) {
             const angle = Math.random() * Math.PI * 2;
             eb.setVelocity(Math.cos(angle) * entSpeed * 0.6, Math.sin(angle) * entSpeed * 0.6);
+            enemy._wanderTimer = 1.5 + Math.random();
           }
         }
+
+        // Grow over time
+        if (behavior.growsOverTime) {
+          const newW = enemy.width + 0.02;
+          const newH = enemy.height + 0.02;
+          enemy.setSize(newW, newH);
+          eb.setSize(newW, newH);
+        }
+
+        // Shrink over time — destroy at min size
+        if (behavior.shrinksOverTime) {
+          const newW = enemy.width - 0.03;
+          const newH = enemy.height - 0.03;
+          if (newW < 4) {
+            this.time.delayedCall(0, () => {
+              if (enemy.active) {
+                enemy._label?.destroy();
+                enemy.destroy();
+                this.deadEnemies++;
+              }
+            });
+          } else {
+            enemy.setSize(newW, newH);
+            eb.setSize(newW, newH);
+          }
+        }
+
         // Sync label position
-        if (enemy._label) {
+        if (enemy._label && enemy.active) {
           enemy._label.setPosition(enemy.x, enemy.y - enemy.height / 2 - 10);
         }
       });
@@ -467,8 +582,11 @@ class GameScene extends Phaser.Scene {
 
     if (this.invincible) {
       this.player.setAlpha(Math.sin(Date.now() / 80) > 0 ? 1 : 0.3);
-    } else {
+    } else if (!this.playerFrozen) {
       this.player.setAlpha(1);
+    } else {
+      // Frozen: pulse blue tint effect via alpha
+      this.player.setAlpha(0.6);
     }
 
     // --- Win / Lose condition checks ---
