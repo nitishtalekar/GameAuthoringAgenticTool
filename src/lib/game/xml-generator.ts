@@ -1,4 +1,4 @@
-import type { GameState, EntitySpec, RepairAction, MicroRhetoricSelectionItem } from "./types";
+import type { GameState, EntitySpec, MicroRhetoricSelectionItem } from "./types";
 
 /**
  * Basic well-formedness check.
@@ -8,7 +8,8 @@ export function validateXml(xml: string): boolean {
   const trimmed = xml.trim();
   return (
     (trimmed.startsWith("<?xml") || trimmed.startsWith("<game")) &&
-    trimmed.includes("</game>")
+    trimmed.includes("</game>") &&
+    trimmed.includes("<relations>")
   );
 }
 
@@ -22,46 +23,44 @@ export function serializeToXml(state: GameState): string {
   const win = state.recipeSelection?.win_recipe ?? "Score Threshold Win";
   const lose = state.recipeSelection?.lose_recipe ?? "Run Out Of Time";
   const structure = state.recipeSelection?.structure_recipe ?? "Arena Layout";
-  const alignmentScore = state.rhetoricCritique?.alignment_score ?? 0;
-  const interpretation = state.rhetoricCritique?.interpretation ?? "";
+  const rhetoricTheme = state.rhetoricCritique?.interpretation?.slice(0, 40) ?? "";
   const selections = state.microRhetoricsSelection?.selections ?? [];
-  const repairs = state.verifierReport?.repairs ?? [];
-  const now = new Date().toISOString();
+
+  // Collect component types that appear in relations — these are relational, not intrinsic
+  const relationalComponents = new Set(selections.map((s) => s.component));
 
   const entitiesXml = entities
-    .map((e) => serializeEntity(e))
+    .map((e) => serializeEntity(e, relationalComponents))
     .join("\n  ");
 
+  const relationsXml = buildRelationsXml(selections);
   const winXml = buildWinConditionXml(win);
   const loseXml = buildLoseConditionXml(lose);
   const layoutXml = buildLayoutXml(structure, entities);
-  const traceXml = buildDesignTraceXml(alignmentScore, interpretation, selections, repairs);
+  const howToPlay = deriveHowToPlay(entities, win, lose);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<!-- Game-O-Matic Generated Game Specification
-     Generated: ${now}
-     Concept: ${escapeXml(state.input)}
-     Alignment Score: ${alignmentScore.toFixed(2)}
--->
 <game version="1.0">
 
   <metadata
     title="${escapeXml(deriveTitle(entities))}"
     description="${escapeXml(deriveDescription(state))}"
     generatedFrom="${escapeXml(state.input)}"
+    howToPlay="${escapeXml(howToPlay)}"
+    rhetoricTheme="${escapeXml(rhetoricTheme)}"
   />
 
   <entities>
   ${entitiesXml}
   </entities>
 
+  ${relationsXml}
+
   ${winXml}
 
   ${loseXml}
 
   ${layoutXml}
-
-  ${traceXml}
 
 </game>`;
 }
@@ -70,30 +69,21 @@ export function serializeToXml(state: GameState): string {
 
 function buildFallbackEntities(state: GameState): EntitySpec[] {
   const entities = state.conceptGraph?.entities ?? [];
-  const selections = state.microRhetoricsSelection?.selections ?? [];
-
-  return entities.map((name, idx) => {
-    const relevantComponents = selections
-      .filter(
-        (s) =>
-          s.relation.startsWith(name + " ") ||
-          s.relation.endsWith(" " + name)
-      )
-      .map((s) => s.component);
-
-    return {
-      name,
-      isPlayer: idx === 0,
-      components: relevantComponents,
-      parameters: { speed: 100, size: 32, spawnRate: 1.5 },
-    };
-  });
+  return entities.map((name, idx) => ({
+    name,
+    isPlayer: idx === 0,
+    components: [],
+    parameters: { speed: 100, size: 32, spawnRate: 1.5 },
+  }));
 }
 
-function serializeEntity(e: EntitySpec): string {
-  const componentsXml = e.components.length > 0
-    ? e.components.map((c) => `      <component type="${escapeXml(c)}" />`).join("\n")
-    : `      <!-- no components assigned -->`;
+function serializeEntity(e: EntitySpec, relationalComponents: Set<string>): string {
+  // Filter out relational components — they belong in <relations>
+  const intrinsic = e.components.filter((c) => !relationalComponents.has(c));
+
+  const componentsXml = intrinsic.length > 0
+    ? intrinsic.map((c) => `      <component type="${escapeXml(c)}" />`).join("\n")
+    : `      <!-- no intrinsic components -->`;
 
   const params = Object.entries(e.parameters);
   const parametersXml = params.length > 0
@@ -101,7 +91,7 @@ function serializeEntity(e: EntitySpec): string {
     : `      <param name="speed" value="100" unit="px/s" />
       <param name="size" value="32" unit="px" />`;
 
-  return `<entity name="${escapeXml(e.name)}" isPlayer="${e.isPlayer}">
+  return `<entity name="${escapeXml(e.name)}" isPlayer="${e.isPlayer}" displayName="${escapeXml(e.name)}">
       <components>
 ${componentsXml}
       </components>
@@ -109,6 +99,27 @@ ${componentsXml}
 ${parametersXml}
       </parameters>
     </entity>`;
+}
+
+function buildRelationsXml(selections: MicroRhetoricSelectionItem[]): string {
+  if (selections.length === 0) {
+    return `<relations>
+    <!-- no relations derived -->
+  </relations>`;
+  }
+
+  const lines = selections.map((s) => {
+    // s.relation format: "Subject verb Object" e.g. "Player chases Enemy"
+    const parts = s.relation.trim().split(/\s+/);
+    const from = parts[0] ?? "Unknown";
+    const to = parts[parts.length - 1] ?? "Unknown";
+    const verb = parts.length > 2 ? parts.slice(1, -1).join(" ") : "interacts with";
+    return `    <relation from="${escapeXml(from)}" to="${escapeXml(to)}" microRhetoric="${escapeXml(s.micro_rhetoric)}" component="${escapeXml(s.component)}" verb="${escapeXml(verb)}" />`;
+  });
+
+  return `<relations>
+${lines.join("\n")}
+  </relations>`;
 }
 
 function buildWinConditionXml(recipe: string): string {
@@ -183,38 +194,6 @@ ${spawnLines}
   </layout>`;
 }
 
-function buildDesignTraceXml(
-  alignmentScore: number,
-  interpretation: string,
-  selections: MicroRhetoricSelectionItem[],
-  repairs: RepairAction[]
-): string {
-  const selectionsXml = selections
-    .map(
-      (s) =>
-        `      <selection relation="${escapeXml(s.relation)}" microRhetoric="${escapeXml(s.micro_rhetoric)}" component="${escapeXml(s.component)}" />`
-    )
-    .join("\n");
-
-  const repairsXml = repairs
-    .map(
-      (r) =>
-        `      <repair operator="${escapeXml(r.operator)}" target="${escapeXml(r.target)}"${r.from ? ` from="${escapeXml(r.from)}"` : ""}${r.to ? ` to="${escapeXml(r.to)}"` : ""} />`
-    )
-    .join("\n");
-
-  return `<designTrace>
-    <rhetoricAlignmentScore value="${alignmentScore.toFixed(2)}" />
-    <interpretation>${escapeXml(interpretation)}</interpretation>
-    <microRhetoricSelections>
-${selectionsXml || "      <!-- none -->"}
-    </microRhetoricSelections>
-    <repairsApplied>
-${repairsXml || "      <!-- none -->"}
-    </repairsApplied>
-  </designTrace>`;
-}
-
 function deriveTitle(entities: EntitySpec[]): string {
   if (entities.length === 0) return "Game-O-Matic Game";
   const names = entities.map((e) => e.name);
@@ -226,6 +205,35 @@ function deriveDescription(state: GameState): string {
   const interpretation = state.rhetoricCritique?.interpretation;
   if (interpretation) return interpretation.slice(0, 120);
   return `An arcade game about ${state.input.slice(0, 80)}. Goal: ${win}.`;
+}
+
+function deriveHowToPlay(entities: EntitySpec[], win: string, lose: string): string {
+  const player = entities.find((e) => e.isPlayer);
+  const others = entities.filter((e) => !e.isPlayer);
+  const playerName = player?.name ?? "the player";
+  const otherNames = others.map((e) => e.name).join(", ") || "other entities";
+
+  const winClause: Record<string, string> = {
+    "Score Threshold Win": `Score points by interacting with ${otherNames}.`,
+    "Eliminate All Of Type": `Eliminate all ${otherNames}.`,
+    "Survive Duration": "Survive as long as possible.",
+    "Reach Goal Zone": "Reach the goal zone on the right.",
+    "Grow Beyond Size": "Grow large enough to win.",
+    "Collect All Items": `Collect all ${otherNames}.`,
+    "Escort Entity Safely": `Escort ${otherNames} to safety.`,
+  };
+
+  const loseClause: Record<string, string> = {
+    "Run Out Of Time": "Don't run out of time.",
+    "Health Depletion": "Don't lose all your health.",
+    "Protected Entity Removed": "Protect your critical entity.",
+    "Enemy Reaches Goal": `Don't let ${otherNames} reach the goal.`,
+    "Meter Overflow": "Keep the meter under control.",
+  };
+
+  const winStr = winClause[win] ?? `Achieve the win condition: ${win}.`;
+  const loseStr = loseClause[lose] ?? `Avoid the lose condition: ${lose}.`;
+  return `Control ${playerName}. ${winStr} ${loseStr}`;
 }
 
 function escapeXml(str: string): string {

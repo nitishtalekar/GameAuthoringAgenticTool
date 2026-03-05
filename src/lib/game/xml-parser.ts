@@ -1,8 +1,17 @@
 // xml-parser.ts — Browser-only XML parsing utility (uses DOMParser)
 // Must only be called in client-side contexts (event handlers, useEffect, etc.)
 
+export interface ParsedRelation {
+  from: string;
+  to: string;
+  microRhetoric: string;
+  component: string;
+  verb: string;
+}
+
 export interface ParsedEntity {
   name: string;
+  displayName: string;
   isPlayer: boolean;
   components: string[];
   params: Record<string, number>;
@@ -17,7 +26,10 @@ export interface ParsedSpawn {
 export interface ParsedGame {
   title: string;
   description: string;
+  howToPlay: string;
+  rhetoricTheme: string;
   entities: ParsedEntity[];
+  relations: ParsedRelation[];
   winCondition: {
     recipe: string;
     thresholdScore?: number;
@@ -51,6 +63,8 @@ export function parseGameXml(xml: string): ParsedGame | null {
   const meta = doc.querySelector("metadata");
   const title = meta?.getAttribute("title") ?? "Untitled Game";
   const description = meta?.getAttribute("description") ?? "";
+  const howToPlay = meta?.getAttribute("howToPlay") ?? "";
+  const rhetoricTheme = meta?.getAttribute("rhetoricTheme") ?? "";
 
   // --- entities ---
   const entityNodes = doc.querySelectorAll("entities > entity");
@@ -58,11 +72,12 @@ export function parseGameXml(xml: string): ParsedGame | null {
 
   const entities: ParsedEntity[] = Array.from(entityNodes).map((el) => {
     const name = el.getAttribute("name") ?? "Unknown";
+    const displayName = el.getAttribute("displayName") ?? name;
     const isPlayer = el.getAttribute("isPlayer") === "true";
 
     const components: string[] = Array.from(
       el.querySelectorAll("components > component")
-    ).map((c) => c.getAttribute("type") ?? "");
+    ).map((c) => c.getAttribute("type") ?? "").filter(Boolean);
 
     const params: Record<string, number> = { speed: 100, size: 32, spawnRate: 1.5 };
     el.querySelectorAll("parameters > param").forEach((p) => {
@@ -73,8 +88,19 @@ export function parseGameXml(xml: string): ParsedGame | null {
       }
     });
 
-    return { name, isPlayer, components, params };
+    return { name, displayName, isPlayer, components, params };
   });
+
+  // --- relations ---
+  const relations: ParsedRelation[] = Array.from(
+    doc.querySelectorAll("relations > relation")
+  ).map((el) => ({
+    from: el.getAttribute("from") ?? "",
+    to: el.getAttribute("to") ?? "",
+    microRhetoric: el.getAttribute("microRhetoric") ?? "",
+    component: el.getAttribute("component") ?? "",
+    verb: el.getAttribute("verb") ?? "",
+  })).filter((r) => r.from && r.to && r.component);
 
   // --- win condition ---
   const winEl = doc.querySelector("winCondition");
@@ -115,7 +141,10 @@ export function parseGameXml(xml: string): ParsedGame | null {
   return {
     title,
     description,
+    howToPlay,
+    rhetoricTheme,
     entities,
+    relations,
     winCondition,
     loseCondition,
     layout: { structure, spawns },

@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import Phaser from "phaser";
 import type { ParsedGame, ParsedEntity, ParsedSpawn } from "@/lib/game/xml-parser";
+import { dominantBehavior, type ComponentBehavior } from "@/data/component-behaviors";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -19,21 +20,10 @@ interface GameCanvasProps {
 
 const CANVAS_W = 800;
 const CANVAS_H = 500;
-
-const COLORS = {
-  player: 0x3498db,
-  chaser: 0xe74c3c,
-  obstacle: 0x95a5a6,
-  absorb: 0x2ecc71,
-  other: 0x9b59b6,
-  bg: 0x1a1a2e,
-};
+const PLAYER_COLOR = 0x3498db;
 
 // Zone → spawn coordinates
-function zoneCoords(
-  zone: ParsedSpawn["zone"],
-  size: number
-): { x: number; y: number } {
+function zoneCoords(zone: ParsedSpawn["zone"], size: number): { x: number; y: number } {
   const s = size / 2;
   switch (zone) {
     case "left":
@@ -54,6 +44,16 @@ function zoneCoords(
 }
 
 // ---------------------------------------------------------------------------
+// Entity group entry — keeps entity metadata alongside its Phaser group
+// ---------------------------------------------------------------------------
+
+interface EntityGroup {
+  entity: ParsedEntity;
+  behavior: ComponentBehavior;
+  group: Phaser.Physics.Arcade.Group;
+}
+
+// ---------------------------------------------------------------------------
 // GameScene
 // ---------------------------------------------------------------------------
 
@@ -62,10 +62,13 @@ class GameScene extends Phaser.Scene {
   private onStatus: (status: "playing" | "won" | "lost", msg: string) => void;
 
   private player!: Phaser.GameObjects.Rectangle;
-  private chaseGroups: Phaser.Physics.Arcade.Group[] = [];
+  private playerLabel!: Phaser.GameObjects.Text;
+
+  // All dynamic non-player groups with their metadata
+  private entityGroups: EntityGroup[] = [];
+
+  // Static obstacles
   private obstacleGroup!: Phaser.Physics.Arcade.StaticGroup;
-  private absorbGroups: Phaser.Physics.Arcade.Group[] = [];
-  private otherGroups: Phaser.Physics.Arcade.Group[] = [];
 
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasdKeys!: {
@@ -98,14 +101,11 @@ class GameScene extends Phaser.Scene {
     this.onStatus = onStatus;
   }
 
-  preload() {
-    // Nothing to load — using colored rectangles only
-  }
+  preload() {}
 
   create() {
-    const { entities, winCondition, loseCondition, layout } = this.pg;
+    const { entities, relations, winCondition, loseCondition, layout } = this.pg;
 
-    // World bounds
     this.physics.world.setBounds(0, 0, CANVAS_W, CANVAS_H);
 
     // ---------- Player ----------
@@ -113,17 +113,24 @@ class GameScene extends Phaser.Scene {
     this.playerEntity = playerEnt;
     const playerSize = playerEnt.params.size ?? 32;
 
-    // Find player spawn zone
-    const playerSpawn = layout.spawns.find(
-      (s) => s.entity === playerEnt.name
-    );
-    const playerZone = playerSpawn?.zone ?? "center";
-    const { x: px, y: py } = zoneCoords(playerZone, playerSize);
+    const playerSpawn = layout.spawns.find((s) => s.entity === playerEnt.name);
+    const { x: px, y: py } = zoneCoords(playerSpawn?.zone ?? "center", playerSize);
 
-    this.player = this.add.rectangle(px, py, playerSize, playerSize, COLORS.player);
+    this.player = this.add.rectangle(px, py, playerSize, playerSize, PLAYER_COLOR);
     this.physics.add.existing(this.player);
-    const playerBody = this.player.body as Phaser.Physics.Arcade.Body;
-    playerBody.setCollideWorldBounds(true);
+    (this.player.body as Phaser.Physics.Arcade.Body).setCollideWorldBounds(true);
+
+    // Player name label
+    this.playerLabel = this.add
+      .text(px, py - playerSize / 2 - 10, playerEnt.displayName, {
+        fontSize: "10px",
+        color: "#ffffff",
+        fontFamily: "monospace",
+        stroke: "#000000",
+        strokeThickness: 2,
+      })
+      .setOrigin(0.5, 1)
+      .setDepth(5);
 
     // ---------- Input ----------
     this.cursors = this.input.keyboard!.createCursorKeys();
@@ -137,25 +144,23 @@ class GameScene extends Phaser.Scene {
     // ---------- Obstacle static group ----------
     this.obstacleGroup = this.physics.add.staticGroup();
 
-    // ---------- Non-player entity groups ----------
+    // ---------- Non-player entities ----------
     entities
       .filter((e) => !e.isPlayer)
       .forEach((ent) => {
-        const isStatic = this.isObstacle(ent) && !this.isChaser(ent) && !this.isAbsorber(ent);
+        // Collect all component types from relations where this entity is "from"
+        const relComponents = relations
+          .filter((r) => r.from === ent.name)
+          .map((r) => r.component);
+        const behavior = dominantBehavior(relComponents);
 
-        if (isStatic) {
-          // Static obstacles — spawn all at once from their spawn entries
+        if (behavior.isStatic) {
           const spawnsForEnt = layout.spawns.filter((s) => s.entity === ent.name);
           if (spawnsForEnt.length === 0) {
-            // Scatter a few in center
-            for (let i = 0; i < 3; i++) {
-              this.spawnObstacle(ent, "center");
-            }
+            for (let i = 0; i < 3; i++) this.spawnObstacle(ent, "center");
           } else {
             spawnsForEnt.forEach((sp) => {
-              // Spawn initial batch immediately
               this.spawnObstacle(ent, sp.zone);
-              // Recurring spawns
               if (sp.interval > 0) {
                 this.time.addEvent({
                   delay: sp.interval * 1000,
@@ -165,133 +170,80 @@ class GameScene extends Phaser.Scene {
               }
             });
           }
-        } else {
-          // Dynamic enemy group
-          const color = this.entityColor(ent);
-          const group = this.physics.add.group();
-
-          const spawnsForEnt = layout.spawns.filter((s) => s.entity === ent.name);
-          if (spawnsForEnt.length === 0) {
-            // Spawn one immediately if no spawn entry
-            this.spawnEnemy(group, ent, "right");
-            this.totalEnemies++;
-          } else {
-            spawnsForEnt.forEach((sp) => {
-              // Spawn one now
-              this.spawnEnemy(group, ent, sp.zone);
-              this.totalEnemies++;
-
-              // Then repeat
-              if (sp.interval > 0) {
-                this.time.addEvent({
-                  delay: sp.interval * 1000,
-                  callback: () => {
-                    this.spawnEnemy(group, ent, sp.zone);
-                    this.totalEnemies++;
-                  },
-                  loop: true,
-                });
-              }
-            });
-          }
-
-          if (this.isAbsorber(ent)) {
-            this.absorbGroups.push(group);
-          } else if (this.isChaser(ent)) {
-            this.chaseGroups.push(group);
-          } else {
-            this.otherGroups.push(group);
-          }
-
-          // Suppress unused variable warning
-          void color;
+          return;
         }
+
+        const group = this.physics.add.group();
+
+        const spawnsForEnt = layout.spawns.filter((s) => s.entity === ent.name);
+        if (spawnsForEnt.length === 0) {
+          this.spawnEnemy(group, ent, behavior, "right");
+          this.totalEnemies++;
+        } else {
+          spawnsForEnt.forEach((sp) => {
+            this.spawnEnemy(group, ent, behavior, sp.zone);
+            this.totalEnemies++;
+            if (sp.interval > 0) {
+              this.time.addEvent({
+                delay: sp.interval * 1000,
+                callback: () => {
+                  this.spawnEnemy(group, ent, behavior, sp.zone);
+                  this.totalEnemies++;
+                },
+                loop: true,
+              });
+            }
+          });
+        }
+
+        this.entityGroups.push({ entity: ent, behavior, group });
       });
 
     // ---------- Colliders ----------
-
-    // Player vs obstacles (block movement)
     this.physics.add.collider(this.player, this.obstacleGroup);
-
-    // All enemy groups vs obstacles (they also collide)
-    [...this.chaseGroups, ...this.absorbGroups, ...this.otherGroups].forEach((g) => {
-      this.physics.add.collider(g, this.obstacleGroup);
+    this.entityGroups.forEach(({ group }) => {
+      this.physics.add.collider(group, this.obstacleGroup);
     });
 
-    // Player vs chasers (health loss)
-    this.chaseGroups.forEach((g) => {
-      this.physics.add.overlap(this.player, g, () => {
-        this.onEnemyContact();
-      });
+    // Player vs each entity group — driven by behavior flags
+    this.entityGroups.forEach(({ behavior, group }) => {
+      if (behavior.removeOnContact || behavior.damagesPlayer || behavior.scoreOnContact) {
+        this.physics.add.overlap(
+          this.player,
+          group,
+          (_player, obj) => {
+            const rect = obj as Phaser.GameObjects.Rectangle;
+            this.onEntityContact(rect, behavior);
+          }
+        );
+      }
     });
 
-    // Player vs absorbers (grow + remove)
-    this.absorbGroups.forEach((g) => {
-      this.physics.add.overlap(
-        this.player,
-        g,
-        (_player, enemy) => {
-          this.onAbsorb(enemy as Phaser.GameObjects.Rectangle);
-        }
-      );
-    });
-
-    // ---------- Survive timer event ----------
+    // ---------- Survive timer ----------
     if (
       winCondition.recipe === "Survive Duration" ||
-      winCondition.recipe === "Score Threshold"
+      loseCondition.recipe === "Run Out Of Time"
     ) {
       this.time.addEvent({
         delay: 1000,
-        callback: () => {
-          if (!this.gameOver) this.surviveTimer++;
-        },
+        callback: () => { if (!this.gameOver) this.surviveTimer++; },
         loop: true,
       });
     }
 
     // ---------- HUD ----------
     const hudStyle = { fontSize: "13px", color: "#ffffff", fontFamily: "monospace" };
-    this.hudHealth = this.add
-      .text(10, 10, `HP: ${this.health}`, hudStyle)
-      .setDepth(10);
-    this.hudTimer = this.add
-      .text(10, 28, `Time: 0s`, hudStyle)
-      .setDepth(10);
-    this.hudScore = this.add
-      .text(10, 46, `Score: 0`, hudStyle)
-      .setDepth(10);
+    this.hudHealth = this.add.text(10, 10, `HP: ${this.health}`, hudStyle).setDepth(10);
+    this.hudTimer = this.add.text(10, 28, `Time: 0s`, hudStyle).setDepth(10);
+    this.hudScore = this.add.text(10, 46, `Score: 0`, hudStyle).setDepth(10);
 
-    const winTarget = this.winTargetLabel();
     this.hudWinTarget = this.add
-      .text(CANVAS_W - 10, 10, winTarget, { ...hudStyle, align: "right" })
+      .text(CANVAS_W - 10, 10, this.winTargetLabel(), {
+        ...hudStyle,
+        align: "right",
+      })
       .setOrigin(1, 0)
       .setDepth(10);
-  }
-
-  // ---------------------------------------------------------------------------
-  // Helpers — entity role detection
-  // ---------------------------------------------------------------------------
-
-  private isChaser(ent: ParsedEntity): boolean {
-    return ent.components.some(
-      (c) => c === "ChaseTargetComponent" || c === "FleeTargetComponent"
-    );
-  }
-
-  private isObstacle(ent: ParsedEntity): boolean {
-    return ent.components.includes("StaticObstacleComponent");
-  }
-
-  private isAbsorber(ent: ParsedEntity): boolean {
-    return ent.components.includes("RemoveTargetAndGrowComponent");
-  }
-
-  private entityColor(ent: ParsedEntity): number {
-    if (this.isAbsorber(ent)) return COLORS.absorb;
-    if (this.isChaser(ent)) return COLORS.chaser;
-    if (this.isObstacle(ent)) return COLORS.obstacle;
-    return COLORS.other;
   }
 
   // ---------------------------------------------------------------------------
@@ -301,73 +253,102 @@ class GameScene extends Phaser.Scene {
   private spawnObstacle(ent: ParsedEntity, zone: ParsedSpawn["zone"]) {
     const size = ent.params.size ?? 48;
     const { x, y } = zoneCoords(zone, size);
-    const rect = this.add.rectangle(x, y, size, size, COLORS.obstacle);
-    this.physics.add.existing(rect, true); // true = static body
+    const rect = this.add.rectangle(x, y, size, size, 0x7f8c8d);
+    this.physics.add.existing(rect, true);
     this.obstacleGroup.add(rect);
+    // Name label on obstacle
+    this.add
+      .text(x, y, ent.displayName, {
+        fontSize: "9px",
+        color: "#ffffff",
+        fontFamily: "monospace",
+        stroke: "#000000",
+        strokeThickness: 2,
+      })
+      .setOrigin(0.5, 0.5)
+      .setDepth(5);
   }
 
   private spawnEnemy(
     group: Phaser.Physics.Arcade.Group,
     ent: ParsedEntity,
+    behavior: ComponentBehavior,
     zone: ParsedSpawn["zone"]
   ): Phaser.GameObjects.Rectangle {
     const size = ent.params.size ?? 32;
     const { x, y } = zoneCoords(zone, size);
-    const color = this.entityColor(ent);
-    const rect = this.add.rectangle(x, y, size, size, color);
+    const rect = this.add.rectangle(x, y, size, size, behavior.color);
     this.physics.add.existing(rect);
-    const body = rect.body as Phaser.Physics.Arcade.Body;
-    body.setCollideWorldBounds(true);
+    (rect.body as Phaser.Physics.Arcade.Body).setCollideWorldBounds(true);
     group.add(rect);
+
+    // Name label above the entity
+    const label = this.add
+      .text(x, y - size / 2 - 10, ent.displayName, {
+        fontSize: "10px",
+        color: "#ffffff",
+        fontFamily: "monospace",
+        stroke: "#000000",
+        strokeThickness: 2,
+      })
+      .setOrigin(0.5, 1)
+      .setDepth(5);
+
+    // Store label reference on the rect so we can track it in update
+    (rect as Phaser.GameObjects.Rectangle & { _label?: Phaser.GameObjects.Text })._label = label;
+
     return rect;
   }
 
   // ---------------------------------------------------------------------------
-  // Collision handlers
+  // Collision handler — driven entirely by ComponentBehavior flags
   // ---------------------------------------------------------------------------
 
-  private onEnemyContact() {
-    if (this.invincible || this.gameOver) return;
-    this.health = Math.max(0, this.health - 1);
-    this.hudHealth.setText(`HP: ${this.health}`);
+  private onEntityContact(
+    entity: Phaser.GameObjects.Rectangle,
+    behavior: ComponentBehavior
+  ) {
+    if (this.gameOver) return;
 
-    // Flash player red
-    this.tweens.add({
-      targets: this.player,
-      alpha: 0.2,
-      duration: 100,
-      yoyo: true,
-      repeat: 3,
-    });
+    if (behavior.damagesPlayer) {
+      if (this.invincible) return;
+      this.health = Math.max(0, this.health - 1);
+      this.hudHealth.setText(`HP: ${this.health}`);
+      this.tweens.add({
+        targets: this.player,
+        alpha: 0.2,
+        duration: 100,
+        yoyo: true,
+        repeat: 3,
+      });
+      this.invincible = true;
+      this.time.delayedCall(1500, () => { this.invincible = false; });
+      if (this.health <= 0) this.triggerLose("You were defeated!");
+    }
 
-    // Invincibility frames (1.5s)
-    this.invincible = true;
-    this.time.delayedCall(1500, () => {
-      this.invincible = false;
-    });
+    if (behavior.scoreOnContact) {
+      this.score++;
+      this.hudScore.setText(`Score: ${this.score}`);
+    }
 
-    if (this.health <= 0) {
-      this.triggerLose("You were caught!");
+    if (behavior.growsOnContact) {
+      const newW = (this.player.width as number) + 4;
+      const newH = (this.player.height as number) + 4;
+      this.player.setSize(newW, newH);
+      (this.player.body as Phaser.Physics.Arcade.Body).setSize(newW, newH);
+    }
+
+    if (behavior.removeOnContact) {
+      // Clean up the floating label if present
+      const labeled = entity as Phaser.GameObjects.Rectangle & { _label?: Phaser.GameObjects.Text };
+      labeled._label?.destroy();
+      entity.destroy();
+      this.deadEnemies++;
     }
   }
 
-  private onAbsorb(enemy: Phaser.GameObjects.Rectangle) {
-    if (this.gameOver) return;
-    enemy.destroy();
-    this.score++;
-    this.deadEnemies++;
-    this.hudScore.setText(`Score: ${this.score}`);
-
-    // Grow player slightly
-    const newW = (this.player.width as number) + 4;
-    const newH = (this.player.height as number) + 4;
-    this.player.setSize(newW, newH);
-    const body = this.player.body as Phaser.Physics.Arcade.Body;
-    body.setSize(newW, newH);
-  }
-
   // ---------------------------------------------------------------------------
-  // Win / Lose
+  // Win / Lose helpers
   // ---------------------------------------------------------------------------
 
   private winTargetLabel(): string {
@@ -375,11 +356,11 @@ class GameScene extends Phaser.Scene {
     switch (winCondition.recipe) {
       case "Survive Duration":
         return `Survive ${winCondition.thresholdScore ?? 30}s`;
-      case "Score Threshold":
+      case "Score Threshold Win":
         return `Score ${winCondition.thresholdScore ?? 10}`;
-      case "Eliminate All":
+      case "Eliminate All Of Type":
         return "Eliminate all enemies";
-      case "Reach Goal":
+      case "Reach Goal Zone":
         return "Reach the goal";
       default:
         return winCondition.recipe;
@@ -403,11 +384,9 @@ class GameScene extends Phaser.Scene {
   }
 
   private showEndText(text: string, color: number) {
-    // Dark overlay
     this.add
       .rectangle(CANVAS_W / 2, CANVAS_H / 2, CANVAS_W, CANVAS_H, 0x000000, 0.55)
       .setDepth(20);
-
     this.add
       .text(CANVAS_W / 2, CANVAS_H / 2, text, {
         fontSize: "48px",
@@ -423,18 +402,15 @@ class GameScene extends Phaser.Scene {
   // Update loop
   // ---------------------------------------------------------------------------
 
-  update(_time: number, delta: number) {
+  update(_time: number, _delta: number) {
     if (this.gameOver) return;
 
-    const playerEnt = this.playerEntity;
-    const speed = playerEnt.params.speed ?? 150;
+    const speed = this.playerEntity.params.speed ?? 150;
     const body = this.player.body as Phaser.Physics.Arcade.Body;
 
     // --- Player movement ---
-    const left =
-      this.cursors.left.isDown || this.wasdKeys.left.isDown;
-    const right =
-      this.cursors.right.isDown || this.wasdKeys.right.isDown;
+    const left = this.cursors.left.isDown || this.wasdKeys.left.isDown;
+    const right = this.cursors.right.isDown || this.wasdKeys.right.isDown;
     const up = this.cursors.up.isDown || this.wasdKeys.up.isDown;
     const down = this.cursors.down.isDown || this.wasdKeys.down.isDown;
 
@@ -445,40 +421,50 @@ class GameScene extends Phaser.Scene {
     if (up) vy -= speed;
     if (down) vy += speed;
 
-    // Normalize diagonal
     if (vx !== 0 && vy !== 0) {
-      const factor = 1 / Math.SQRT2;
-      vx *= factor;
-      vy *= factor;
+      const f = 1 / Math.SQRT2;
+      vx *= f;
+      vy *= f;
     }
-
     body.setVelocity(vx, vy);
 
-    // --- Chase AI ---
-    this.chaseGroups.forEach((g) => {
-      g.getChildren().forEach((child) => {
-        const enemy = child as Phaser.GameObjects.Rectangle;
-        const ent = this.entityForGameObject(enemy);
-        const s = ent?.params.speed ?? 80;
-        this.physics.moveToObject(enemy, this.player, s);
-      });
-    });
+    // Sync player label
+    this.playerLabel.setPosition(this.player.x, this.player.y - this.player.height / 2 - 10);
 
-    // --- Also move other groups with a gentle wander ---
-    // (simplified: they drift toward player slowly)
-    this.otherGroups.forEach((g) => {
-      g.getChildren().forEach((child) => {
-        const enemy = child as Phaser.GameObjects.Rectangle;
-        const ent = this.entityForGameObject(enemy);
-        const s = (ent?.params.speed ?? 40) * 0.5;
-        this.physics.moveToObject(enemy, this.player, s);
+    // --- AI movement driven by behavior flags ---
+    this.entityGroups.forEach(({ entity: ent, behavior, group }) => {
+      group.getChildren().forEach((child) => {
+        const enemy = child as Phaser.GameObjects.Rectangle & { _label?: Phaser.GameObjects.Text };
+        const entSpeed = ent.params.speed ?? 80;
+
+        if (behavior.movesTowardPlayer) {
+          this.physics.moveToObject(enemy, this.player, entSpeed);
+        } else if (behavior.movesAwayFromPlayer) {
+          const dx = enemy.x - this.player.x;
+          const dy = enemy.y - this.player.y;
+          const len = Math.sqrt(dx * dx + dy * dy) || 1;
+          (enemy.body as Phaser.Physics.Arcade.Body).setVelocity(
+            (dx / len) * entSpeed,
+            (dy / len) * entSpeed
+          );
+        } else if (behavior.role === "wanderer") {
+          // Re-randomize direction occasionally
+          const eb = enemy.body as Phaser.Physics.Arcade.Body;
+          if (Math.abs(eb.velocity.x) < 5 && Math.abs(eb.velocity.y) < 5) {
+            const angle = Math.random() * Math.PI * 2;
+            eb.setVelocity(Math.cos(angle) * entSpeed * 0.6, Math.sin(angle) * entSpeed * 0.6);
+          }
+        }
+        // Sync label position
+        if (enemy._label) {
+          enemy._label.setPosition(enemy.x, enemy.y - enemy.height / 2 - 10);
+        }
       });
     });
 
     // --- HUD update ---
     this.hudTimer.setText(`Time: ${this.surviveTimer}s`);
 
-    // Invincibility flash
     if (this.invincible) {
       this.player.setAlpha(Math.sin(Date.now() / 80) > 0 ? 1 : 0.3);
     } else {
@@ -486,61 +472,31 @@ class GameScene extends Phaser.Scene {
     }
 
     // --- Win / Lose condition checks ---
-    void delta; // delta unused after removal of delta-based timer (using Phaser timer events instead)
-
     const { winCondition, loseCondition } = this.pg;
 
-    // Win checks
     if (winCondition.recipe === "Survive Duration") {
       const target = winCondition.thresholdScore ?? 30;
       this.hudWinTarget.setText(`Survive ${target - this.surviveTimer}s more`);
-      if (this.surviveTimer >= target) {
-        this.triggerWin(`Survived ${target} seconds!`);
-      }
-    } else if (winCondition.recipe === "Score Threshold") {
+      if (this.surviveTimer >= target) this.triggerWin(`Survived ${target} seconds!`);
+    } else if (winCondition.recipe === "Score Threshold Win") {
       const target = winCondition.thresholdScore ?? 10;
       this.hudWinTarget.setText(`Score ${this.score}/${target}`);
-      if (this.score >= target) {
-        this.triggerWin(`Reached score ${target}!`);
-      }
-    } else if (winCondition.recipe === "Eliminate All") {
-      const allGroups = [
-        ...this.chaseGroups,
-        ...this.absorbGroups,
-        ...this.otherGroups,
-      ];
-      const remaining = allGroups.reduce(
-        (acc, g) => acc + g.getChildren().length,
+      if (this.score >= target) this.triggerWin(`Reached score ${target}!`);
+    } else if (winCondition.recipe === "Eliminate All Of Type") {
+      const remaining = this.entityGroups.reduce(
+        (acc, { group }) => acc + group.getChildren().length,
         0
       );
       this.hudWinTarget.setText(`Enemies left: ${remaining}`);
-      if (remaining === 0 && this.totalEnemies > 0) {
-        this.triggerWin("All enemies eliminated!");
-      }
+      if (remaining === 0 && this.totalEnemies > 0) this.triggerWin("All enemies eliminated!");
     }
 
-    // Lose checks
     if (loseCondition.recipe === "Run Out Of Time" || loseCondition.recipe === "Health Depletion") {
       const timerSecs = loseCondition.timerSeconds;
       if (timerSecs !== undefined && this.surviveTimer >= timerSecs) {
         this.triggerLose("Time ran out!");
       }
     }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Utility
-  // ---------------------------------------------------------------------------
-
-  // Best-effort: match a game object back to its ParsedEntity by size heuristic
-  private entityForGameObject(
-    _obj: Phaser.GameObjects.Rectangle
-  ): ParsedEntity | undefined {
-    // Since we can't tag game objects easily without extending the class,
-    // we return the first non-player entity whose components suggest chasing.
-    // This is used only for speed lookup in chase AI, so returning first chaser
-    // entity's params is acceptable for this simple implementation.
-    return this.pg.entities.find((e) => !e.isPlayer && this.isChaser(e));
   }
 }
 
@@ -555,7 +511,6 @@ export default function GameCanvas({ parsedGame, onStatusChange }: GameCanvasPro
   useEffect(() => {
     if (!containerRef.current) return;
 
-    // Destroy previous Phaser instance (handles React StrictMode double-invoke)
     if (gameRef.current) {
       gameRef.current.destroy(true);
       gameRef.current = null;

@@ -260,23 +260,21 @@ Output ONLY the XML document — no prose, no code fences, no markdown, no addit
 
 XML SCHEMA:
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Game-O-Matic Generated Game Specification
-     Generated: {ISO timestamp}
-     Concept: {original user input}
-     Alignment Score: {alignment score from rhetoric critic}
--->
 <game version="1.0">
 
   <metadata
     title="{short title derived from entity names}"
     description="{one-line game premise}"
     generatedFrom="{original concept map text}"
+    howToPlay="{1-2 sentence player instruction, e.g. 'Control the Player to collect Coins. Avoid running out of time.'}"
+    rhetoricTheme="{high-level rhetoric theme from the alignment interpretation, max 40 chars, e.g. 'predator-prey'}"
   />
 
   <entities>
-    <entity name="{EntityName}" isPlayer="{true|false}">
+    <entity name="{EntityName}" isPlayer="{true|false}" displayName="{human-readable display name}">
       <components>
-        <component type="{ComponentType}" target="{optional: target entity name}" />
+        <!-- ONLY intrinsic/behavioral components (movement, spawning, self-state). Do NOT put relational/collision components here — those go in <relations>. -->
+        <component type="{ComponentType}" />
       </components>
       <parameters>
         <param name="speed" value="100" unit="px/s" />
@@ -285,6 +283,11 @@ XML SCHEMA:
       </parameters>
     </entity>
   </entities>
+
+  <relations>
+    <!-- Derived from micro-rhetoric selections. At least one relation per entity pair. -->
+    <relation from="{EntityName}" to="{EntityName}" microRhetoric="{micro-rhetoric name}" component="{ComponentType}" verb="{action verb}" />
+  </relations>
 
   <winCondition recipe="{Win Recipe Name}">
     <threshold score="10" />
@@ -295,29 +298,21 @@ XML SCHEMA:
   </loseCondition>
 
   <layout structure="{Structure Recipe Name}">
-    <spawn entity="{EntityName}" zone="left|center|right" interval="2.0" />
+    <spawn entity="{EntityName}" zone="left|center|right|any" interval="2.0" />
   </layout>
-
-  <designTrace>
-    <rhetoricAlignmentScore value="{float}" />
-    <interpretation>{interpretation text}</interpretation>
-    <microRhetoricSelections>
-      <selection relation="{Subject verb Object}" microRhetoric="{name}" component="{type}" />
-    </microRhetoricSelections>
-    <repairsApplied>
-      <repair operator="{operator}" target="{entity}" from="{old}" to="{new}" />
-    </repairsApplied>
-  </designTrace>
 
 </game>
 
 RULES:
 - Include ALL entities from the specification
 - Mark exactly one entity as isPlayer="true"
-- Include all components assigned to each entity
+- Entity <components> must only contain intrinsic behavioral components (e.g. RandomMovementComponent, SpawnPeriodicallyComponent). Relational components (collision, seek, damage) belong in <relations> only.
+- <relations> must be derived from the micro-rhetoric selections. Each selection maps to one <relation> element with from/to entity names, the micro-rhetoric name, component type, and a short verb describing the interaction.
+- Ensure at least one <relation> exists for every entity pair in the game.
 - Use realistic parameter values: speed 50–250, size 16–64, spawnRate 0.5–5.0
-- The designTrace section must include all micro-rhetoric selections and any repairs applied
-- Assign parameter values that reflect the entity's role (e.g., player is slower but controlled)`;
+- Assign parameter values that reflect the entity's role (e.g., player is slower but controlled)
+- howToPlay must be a clear player-facing instruction derived from the player entity and the win/lose recipes
+- rhetoricTheme must be a concise label (≤ 40 chars) summarizing the conceptual theme from the rhetoric critique`;
 
   return buildAgentNode(llm, { systemPrompt });
 }

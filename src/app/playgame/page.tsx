@@ -4,11 +4,159 @@ import { useState, useCallback } from "react";
 import dynamic from "next/dynamic";
 import type { ParsedGame } from "@/lib/game/xml-parser";
 import { parseGameXml } from "@/lib/game/xml-parser";
+import { dominantBehavior } from "@/data/component-behaviors";
 
 // GameCanvas imports Phaser at module level — must never be server-rendered
 const GameCanvas = dynamic(() => import("./GameCanvas"), { ssr: false });
 
 type GameStatus = "idle" | "playing" | "won" | "lost";
+
+/** Convert a hex number like 0xe74c3c to a CSS color string */
+function hexToCss(hex: number): string {
+  return `#${hex.toString(16).padStart(6, "0")}`;
+}
+
+function GameInfoPanel({ game }: { game: ParsedGame }) {
+  const playerEnt = game.entities.find((e) => e.isPlayer) ?? game.entities[0];
+  const enemies = game.entities.filter((e) => !e.isPlayer);
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: 12,
+        marginBottom: 12,
+        fontSize: 13,
+      }}
+    >
+      {/* How to Play */}
+      {game.howToPlay && (
+        <div
+          style={{
+            gridColumn: "1 / -1",
+            padding: "10px 14px",
+            background: "#eff6ff",
+            border: "1px solid #bfdbfe",
+            borderRadius: 6,
+            color: "#1e40af",
+          }}
+        >
+          <strong style={{ display: "block", marginBottom: 4 }}>How to Play</strong>
+          {game.howToPlay}
+        </div>
+      )}
+
+      {/* Win condition */}
+      <div
+        style={{
+          padding: "10px 14px",
+          background: "#f0fdf4",
+          border: "1px solid #86efac",
+          borderRadius: 6,
+        }}
+      >
+        <strong style={{ display: "block", marginBottom: 4, color: "#15803d" }}>
+          Win Condition
+        </strong>
+        <span style={{ color: "#166534" }}>{game.winCondition.recipe}</span>
+        {game.winCondition.thresholdScore !== undefined && (
+          <span style={{ color: "#4ade80", marginLeft: 6 }}>
+            (target: {game.winCondition.thresholdScore})
+          </span>
+        )}
+      </div>
+
+      {/* Lose condition */}
+      <div
+        style={{
+          padding: "10px 14px",
+          background: "#fef2f2",
+          border: "1px solid #fca5a5",
+          borderRadius: 6,
+        }}
+      >
+        <strong style={{ display: "block", marginBottom: 4, color: "#991b1b" }}>
+          Lose Condition
+        </strong>
+        <span style={{ color: "#7f1d1d" }}>{game.loseCondition.recipe}</span>
+        {game.loseCondition.timerSeconds !== undefined && (
+          <span style={{ color: "#f87171", marginLeft: 6 }}>
+            ({game.loseCondition.timerSeconds}s timer)
+          </span>
+        )}
+      </div>
+
+      {/* Entity legend */}
+      <div
+        style={{
+          gridColumn: "1 / -1",
+          padding: "10px 14px",
+          background: "#f9fafb",
+          border: "1px solid #e5e7eb",
+          borderRadius: 6,
+        }}
+      >
+        <strong style={{ display: "block", marginBottom: 8, color: "#111827" }}>
+          Entities
+        </strong>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 20px" }}>
+          {/* Player */}
+          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span
+              style={{
+                display: "inline-block",
+                width: 14,
+                height: 14,
+                background: "#3498db",
+                borderRadius: 2,
+                flexShrink: 0,
+              }}
+            />
+            <span>
+              <strong>{playerEnt.displayName}</strong>
+              <span style={{ color: "#6b7280", marginLeft: 4 }}>(you)</span>
+            </span>
+          </span>
+
+          {/* Enemies */}
+          {enemies.map((ent) => {
+            const relComponents = game.relations
+              .filter((r) => r.from === ent.name)
+              .map((r) => r.component);
+            const behavior = dominantBehavior(relComponents);
+            return (
+              <span
+                key={ent.name}
+                style={{ display: "flex", alignItems: "center", gap: 6 }}
+              >
+                <span
+                  style={{
+                    display: "inline-block",
+                    width: 14,
+                    height: 14,
+                    background: hexToCss(behavior.color),
+                    borderRadius: 2,
+                    flexShrink: 0,
+                  }}
+                />
+                <span>
+                  <strong>{ent.displayName}</strong>
+                  <span style={{ color: "#6b7280", marginLeft: 4 }}>
+                    — {behavior.description}
+                  </span>
+                </span>
+              </span>
+            );
+          })}
+        </div>
+        <p style={{ margin: "8px 0 0", color: "#9ca3af", fontSize: 12 }}>
+          Move: Arrow keys or WASD
+        </p>
+      </div>
+    </div>
+  );
+}
 
 export default function PlayGamePage() {
   const [xmlInput, setXmlInput] = useState("");
@@ -68,7 +216,13 @@ export default function PlayGamePage() {
         </p>
         <a
           href="/"
-          style={{ fontSize: 13, color: "#2563eb", textDecoration: "none", marginTop: 4, display: "inline-block" }}
+          style={{
+            fontSize: 13,
+            color: "#2563eb",
+            textDecoration: "none",
+            marginTop: 4,
+            display: "inline-block",
+          }}
         >
           &larr; Back to Game-O-Matic
         </a>
@@ -140,15 +294,17 @@ export default function PlayGamePage() {
         </section>
       )}
 
-      {/* Game canvas */}
+      {/* Game area */}
       {parsedGame && (
         <section style={{ marginBottom: 24 }}>
+          {/* Title + reset button */}
           <div
             style={{
               display: "flex",
-              alignItems: "center",
+              alignItems: "flex-start",
               justifyContent: "space-between",
               marginBottom: 12,
+              gap: 12,
             }}
           >
             <div>
@@ -158,6 +314,11 @@ export default function PlayGamePage() {
               {parsedGame.description && (
                 <p style={{ margin: "4px 0 0", fontSize: 13, color: "#666" }}>
                   {parsedGame.description}
+                </p>
+              )}
+              {parsedGame.rhetoricTheme && (
+                <p style={{ margin: "2px 0 0", fontSize: 12, color: "#9ca3af" }}>
+                  Theme: {parsedGame.rhetoricTheme}
                 </p>
               )}
             </div>
@@ -171,44 +332,18 @@ export default function PlayGamePage() {
                 borderRadius: 5,
                 cursor: "pointer",
                 color: "#666",
+                whiteSpace: "nowrap",
+                flexShrink: 0,
               }}
             >
               Change XML
             </button>
           </div>
 
-          <div
-            style={{
-              marginBottom: 12,
-              padding: "8px 12px",
-              background: "#f9fafb",
-              borderRadius: 6,
-              border: "1px solid #e5e7eb",
-              fontSize: 12,
-              color: "#555",
-              display: "flex",
-              gap: 20,
-              flexWrap: "wrap",
-            }}
-          >
-            <span>
-              <strong style={{ color: "#3498db" }}>&#9632;</strong> You (player)
-            </span>
-            <span>
-              <strong style={{ color: "#e74c3c" }}>&#9632;</strong> Chaser
-            </span>
-            <span>
-              <strong style={{ color: "#95a5a6" }}>&#9632;</strong> Obstacle
-            </span>
-            <span>
-              <strong style={{ color: "#2ecc71" }}>&#9632;</strong> Absorb/Grow
-            </span>
-            <span>
-              <strong style={{ color: "#9b59b6" }}>&#9632;</strong> Other
-            </span>
-            <span style={{ marginLeft: "auto" }}>Move: Arrow keys or WASD</span>
-          </div>
+          {/* Info panel: how to play, win/lose, entity legend */}
+          <GameInfoPanel game={parsedGame} />
 
+          {/* Canvas */}
           <GameCanvas parsedGame={parsedGame} onStatusChange={handleStatusChange} />
         </section>
       )}
