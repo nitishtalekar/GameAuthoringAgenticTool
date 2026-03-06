@@ -163,6 +163,22 @@ RULES:
 - All selected names must come from the lists above exactly as written
 - Choose recipes that match the mechanics that are already present in the entity components
 
+CRITICAL — WIN AND LOSE CONDITIONS MUST BE MUTUALLY EXCLUSIVE:
+The win and lose conditions must describe opposite, non-contradictory outcomes for the same game state.
+Ask yourself: "Can both the win condition and the lose condition trigger for the same event?" If yes, you have chosen conflicting recipes — pick different ones.
+
+Forbidden combinations (these pairs directly contradict each other and must NEVER be used together):
+- "Eliminate All Of Type" (win) + "Protected Entity Removed" (lose): removing entities cannot simultaneously be both the goal and the failure state for the same entity type.
+- "Escort Entity Safely" (win) + "Protected Entity Removed" (lose) against the SAME entity: keeping an entity alive cannot be the win trigger and its death the lose trigger at the same time unless they refer to different entities.
+- Any win recipe that requires removing entity X + any lose recipe that requires preserving entity X.
+
+To avoid contradictions, follow this decision logic:
+1. If the player wins by removing a specific entity type → the lose condition must NOT be triggered by that same entity type being removed (e.g., use "Run Out Of Time" or "Health Depletion" instead).
+2. If the player wins by keeping an entity alive → the lose condition SHOULD be triggered by that entity being removed (this is consistent, not contradictory).
+3. If the lose condition is "Protected Entity Removed", the win condition must NOT involve removing that protected entity.
+
+Verify your selection before outputting: state which entity type triggers win and which triggers lose, and confirm they are different events or different entity types.
+
 OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no markdown fences, no extra text:
 {
   "win_recipe": "recipe name",
@@ -170,8 +186,8 @@ OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no
   "structure_recipe": "recipe name",
   "patch_recipes": ["recipe name"],
   "justifications": {
-    "win": "one sentence",
-    "lose": "one sentence",
+    "win": "one sentence explaining which mechanic/entity triggers the win",
+    "lose": "one sentence explaining which mechanic/entity triggers the lose — must NOT reference the same entity or event as the win justification",
     "structure": "one sentence"
   }
 }`;
