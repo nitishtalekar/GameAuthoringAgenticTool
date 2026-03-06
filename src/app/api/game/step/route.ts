@@ -8,7 +8,6 @@ import {
   buildRecipeAgent,
   buildVerifierAgent,
   buildRhetoricCriticAgent,
-  buildRhetoricSwapAgent,
   buildXmlGenerationAgent,
 } from "@/lib/game/agents";
 import { validateXml, serializeToXml } from "@/lib/game/xml-generator";
@@ -38,9 +37,9 @@ export async function POST(req: NextRequest): Promise<NextResponse<StepResponse>
     const body = (await req.json()) as StepRequest;
     const { step, state } = body;
 
-    if (!step || step < 1 || (step > 7 && step !== 65)) {
+    if (!step || step < 1 || step > 7) {
       return NextResponse.json(
-        { state, error: "Invalid step number. Must be between 1 and 7 (or 65 for rhetoric swap)." },
+        { state, error: "Invalid step number. Must be between 1 and 7." },
         { status: 400 }
       );
     }
@@ -217,7 +216,7 @@ async function runAgent5(state: GameState): Promise<GameState> {
 
   const humanMsg = `Original user concept: ${state.input}
 
-Concept graph:
+Concept graph (use this to check concept consistency of entityAttributeState):
 ${JSON.stringify(state.conceptGraph, null, 2)}
 
 Micro-rhetoric selections:
@@ -229,7 +228,7 @@ ${JSON.stringify(state.entityAttributeState, null, 2)}
 Recipe selection — win and lose conditions (this is what you must verify and may repair):
 ${JSON.stringify(state.recipeSelection, null, 2)}
 
-Verify playability and propose minimal repairs to the entity attribute state and/or win/lose conditions if needed.`;
+Verify playability, propose minimal repairs, and check concept graph consistency.`;
 
   const finalState = await runGraph(graph, {
     messages: [human(humanMsg)],
@@ -291,85 +290,6 @@ Evaluate how well the game mechanics express the intended rhetorical meaning.`;
   return { ...state, step: 6, rhetoricCritique };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function runAgent6b(state: GameState): Promise<GameState> {
-  if (!state.entityAttributeState || !state.rhetoricCritique) {
-    throw new Error("Step 65 requires step 6 (rhetoric critique) to be completed first.");
-  }
-
-  // Apply suggested attribute swaps to entityAttributeState via swap agent
-  const swapNode = buildRhetoricSwapAgent();
-  const swapGraph = buildGraph({
-    nodes: [{ name: "swap", fn: swapNode }],
-    edges: [{ from: "swap", to: "END" }],
-    entryPoint: "swap",
-  });
-
-  const swapMsg = `Current entity attribute state:
-${JSON.stringify(state.entityAttributeState, null, 2)}
-
-Micro-rhetoric selections:
-${JSON.stringify(state.microRhetoricsSelection, null, 2)}
-
-Suggested swaps from rhetoric critic:
-${JSON.stringify(state.rhetoricCritique.suggested_swaps, null, 2)}
-
-Apply these swaps and return the updated entities list.`;
-
-  const swapResult = await runGraph(swapGraph, {
-    messages: [human(swapMsg)],
-  });
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const swapOutput = parseJson<any>(
-    getLastMessageContent(swapResult.messages),
-    "Agent 6b (Rhetoric Swap)"
-  );
-  // Swap agent still returns an entities list; we keep it for the re-critique message but don't store it
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const swappedEntities: any[] = swapOutput.entities ?? [];
-
-  // Re-run rhetoric critique using entityAttributeState + recipeSelection
-  const criticNode = buildRhetoricCriticAgent();
-  const criticGraph = buildGraph({
-    nodes: [{ name: "critic", fn: criticNode }],
-    edges: [{ from: "critic", to: "END" }],
-    entryPoint: "critic",
-  });
-
-  const criticMsg = `Original user concept (intended meaning): ${state.input}
-
-Original concept graph:
-${JSON.stringify(state.conceptGraph, null, 2)}
-
-Entity attribute state (the game mechanics after swaps):
-${JSON.stringify(state.entityAttributeState, null, 2)}
-
-Swapped component context:
-${JSON.stringify(swappedEntities, null, 2)}
-
-Recipe selection (win/lose conditions):
-${JSON.stringify(state.recipeSelection, null, 2)}
-
-Evaluate how well the game mechanics express the intended rhetorical meaning.`;
-
-  const criticResult = await runGraph(criticGraph, {
-    messages: [human(criticMsg)],
-  });
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const postSwapRhetoricCritique = parseJson<any>(
-    getLastMessageContent(criticResult.messages),
-    "Agent 6c (Post-Swap Rhetoric Critic)"
-  );
-
-  return {
-    ...state,
-    step: 6, // keep step at 6 so "Next — Step 7" button remains visible
-    rhetoricSwapApplied: true,
-    postSwapRhetoricCritique,
-  };
-}
 
 async function runAgent7(state: GameState): Promise<GameState> {
   if (!state.entityAttributeState || !state.recipeSelection) {
@@ -382,8 +302,6 @@ async function runAgent7(state: GameState): Promise<GameState> {
     edges: [{ from: "xmlGen", to: "END" }],
     entryPoint: "xmlGen",
   });
-
-  const critique = state.postSwapRhetoricCritique ?? state.rhetoricCritique;
 
   const humanMsg = `Original user concept: ${state.input}
 
@@ -400,8 +318,8 @@ Verifier repairs applied:
 ${JSON.stringify(state.verifierReport?.repairs, null, 2)}
 
 Rhetoric critique:
-Alignment score: ${critique?.alignment_score ?? "N/A"}
-Interpretation: ${critique?.interpretation ?? "N/A"}
+Alignment score: ${state.rhetoricCritique?.alignment_score ?? "N/A"}
+Interpretation: ${state.rhetoricCritique?.interpretation ?? "N/A"}
 
 Generate the complete XML game specification now.`;
 
@@ -423,52 +341,56 @@ Generate the complete XML game specification now.`;
   return { ...state, step: 7, xmlOutput };
 }
 
-// --- Pure helper: apply verifier repairs to entityAttributeState and recipeSelection ---
+// --- Pure helper: apply a list of repair/suggestion actions to entityAttributeState and recipeSelection ---
 
-function applyVerifierRepairs(
+function applyActions(
   entityAttributeState: EntityAttributeState,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   recipeSelection: any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  verifierReport: any
+  actions: any[]
 ): { entityAttributeState: EntityAttributeState; recipeSelection: typeof recipeSelection } {
-  if (!verifierReport?.repairs || verifierReport.repairs.length === 0) {
-    return { entityAttributeState, recipeSelection };
-  }
-
   let updatedAttrs: EntityAttributeState = { ...entityAttributeState };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let updatedRecipe: any = { ...recipeSelection };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const repair of verifierReport.repairs as any[]) {
-    switch (repair.operator) {
+  for (const action of actions as any[]) {
+    switch (action.operator) {
       case "AlterAttribute": {
-        // Win/lose condition repair
-        if (repair.conditionField && repair.conditionValue) {
-          updatedRecipe = { ...updatedRecipe, [repair.conditionField]: repair.conditionValue };
-        } else if (repair.target && repair.attribute !== undefined) {
-          // Entity attribute repair
+        if (action.conditionField && action.conditionValue) {
+          updatedRecipe = { ...updatedRecipe, [action.conditionField]: action.conditionValue };
+        } else if (action.target && action.attribute !== undefined) {
           updatedAttrs = {
             ...updatedAttrs,
-            [repair.target]: {
-              ...(updatedAttrs[repair.target] ?? {}),
-              [repair.attribute]: repair.attributeValue,
+            [action.target]: {
+              ...(updatedAttrs[action.target] ?? {}),
+              [action.attribute]: action.attributeValue,
+            },
+          };
+        }
+        break;
+      }
+      case "AdjustParameter": {
+        if (action.target && action.parameter !== undefined) {
+          updatedAttrs = {
+            ...updatedAttrs,
+            [action.target]: {
+              ...(updatedAttrs[action.target] ?? {}),
+              [action.parameter]: action.value,
             },
           };
         }
         break;
       }
       case "AssignPlayer": {
-        if (repair.target) {
-          // Clear isPlayer on all entities, then set on target
+        if (action.target) {
           const cleared: EntityAttributeState = {};
           for (const [entity, attrs] of Object.entries(updatedAttrs)) {
-            cleared[entity] = { ...attrs, isPlayer: entity === repair.target };
+            cleared[entity] = { ...attrs, isPlayer: entity === action.target };
           }
-          // Also ensure movesAnyWay=true for new player
-          if (cleared[repair.target]) {
-            cleared[repair.target] = { ...cleared[repair.target], movesAnyWay: true };
+          if (cleared[action.target]) {
+            cleared[action.target] = { ...cleared[action.target], movesAnyWay: true };
           }
           updatedAttrs = cleared;
         }
@@ -478,6 +400,24 @@ function applyVerifierRepairs(
   }
 
   return { entityAttributeState: updatedAttrs, recipeSelection: updatedRecipe };
+}
+
+function applyVerifierRepairs(
+  entityAttributeState: EntityAttributeState,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  recipeSelection: any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  verifierReport: any
+): { entityAttributeState: EntityAttributeState; recipeSelection: typeof recipeSelection } {
+  const repairs: unknown[] = verifierReport?.repairs ?? [];
+  const suggestions: unknown[] = verifierReport?.suggestions ?? [];
+  const allActions = [...repairs, ...suggestions];
+
+  if (allActions.length === 0) {
+    return { entityAttributeState, recipeSelection };
+  }
+
+  return applyActions(entityAttributeState, recipeSelection, allActions);
 }
 
 // --- Utility: safe JSON parse with descriptive error ---

@@ -100,6 +100,9 @@ export interface VerifierSuggestion {
   /** For AlterAttribute */
   attribute?: string;
   attributeValue?: string | boolean | null;
+  /** For condition repairs */
+  conditionField?: "win_condition" | "lose_condition";
+  conditionValue?: Record<string, string>;
   /** For AdjustParameter */
   parameter?: string;
   value?: string | number;
@@ -111,24 +114,17 @@ export interface VerifierSuggestion {
 export interface VerifierReport {
   isPlayable: boolean;
   issues: string[];
+  repairs: RepairAction[];
   suggestions: VerifierSuggestion[];
   repairsSummary: string;
-  repairs: RepairAction[];
 }
 
 // ---- Rhetoric Critique (Agent 5 output) ----
-
-export interface SuggestedSwap {
-  entity: string;
-  replace: string;
-  with: string;
-}
 
 export interface RhetoricCritique {
   alignment_score: number;
   interpretation: string;
   mismatches: string[];
-  suggested_swaps: SuggestedSwap[];
 }
 
 // ---- Entity Attribute State (Agent 3 output) ----
@@ -153,8 +149,6 @@ export interface GameState {
   recipeSelection?: RecipeSelection;
   verifierReport?: VerifierReport;
   rhetoricCritique?: RhetoricCritique;
-  rhetoricSwapApplied?: boolean;
-  postSwapRhetoricCritique?: RhetoricCritique;
   xmlOutput?: string;
 }
 

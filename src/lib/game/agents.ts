@@ -305,9 +305,16 @@ REPAIR RULES:
 - Win/lose condition repairs: use operator="AlterAttribute" with conditionField="win_condition" or "lose_condition" and conditionValue containing the full updated condition object
 - If win_condition or lose_condition reference an attribute that doesn't match any entity's actual attributes, propose an AlterAttribute repair to fix the entity attribute OR a condition repair to point to the correct attribute
 
+CONCEPT GRAPH CONSISTENCY CHECKS — evaluate these AFTER playability checks:
+For each relation in the concept graph (subject verb object), verify:
+a. Both subject and object appear as entities in entityAttributeState.
+b. The relationship implied by the relation is encoded as at least one attribute (e.g. "A destroys B" → B.isRemovedBy = "A"; "A chases B" → B.chasedBy = "A"; "A damages B" → B.isDamagedBy = "A").
+c. The win/lose conditions are consistent with the most prominent relations in the concept graph (e.g. if the graph says "Player destroys Asteroid", the win condition should involve Asteroid isRemovedBy Player).
+If a concept graph relation is NOT encoded in entityAttributeState, add an AlterAttribute suggestion to encode it.
+
 SUGGESTIONS vs REPAIRS:
-- "repairs" = actions you WILL apply (minimal, high-confidence fixes)
-- "suggestions" = additional improvements that could help but are not blocking playability (lower confidence or rhetorical improvements)
+- "repairs" = actions you WILL apply (minimal, high-confidence fixes for playability)
+- "suggestions" = improvements that are not blocking playability — includes both pacing/balance tweaks (AdjustParameter) AND concept graph consistency gaps (AlterAttribute to encode a missing relation). Use the same operator structure as repairs.
 
 If all checks pass, set isPlayable=true and return empty issues/repairs arrays.
 
@@ -351,6 +358,13 @@ OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no
       "description": "Increase spawn rate for better pacing",
       "parameter": "spawnRate",
       "value": 2.5
+    },
+    {
+      "operator": "AlterAttribute",
+      "target": "EntityName",
+      "attribute": "isRemovedBy",
+      "attributeValue": "OtherEntity",
+      "description": "The relation 'OtherEntity destroys EntityName' is not encoded in entityAttributeState."
     }
   ],
   "repairsSummary": "Plain-English summary of all repairs applied (or 'No repairs needed' if none)."
@@ -367,7 +381,6 @@ OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no
  */
 export function buildRhetoricCriticAgent(): NodeFunction {
   const llm = createOpenAIModel({ temperature: 0.7 });
-  const componentLibrary = formatMicroRhetoricsForPrompt();
   const recipeLibrary = formatRecipesForPrompt();
 
   const systemPrompt = `You are a rhetoric critic agent for the Game-O-Matic system.
@@ -394,25 +407,16 @@ WHAT TO EVALUATE — ground every judgment in the concept graph:
 3. Are there entity attributes set that have no corresponding relation in the concept graph? These dilute or distort the intended meaning.
 4. Does the overall game mechanic convey the same message the author intended with the original concept?
 
-mismatches: specific places where mechanics contradict or miss the intended idea
-suggested_swaps: minimal component-level changes to improve alignment
-
-AVAILABLE COMPONENTS (suggested_swaps must only reference component names from this list):
-${componentLibrary}
+mismatches: specific places where mechanics contradict or miss the intended idea — critique only, do NOT suggest fixes.
 
 AVAILABLE RECIPES (for context):
 ${recipeLibrary}
-
-CONSTRAINT: The "replace" and "with" fields in suggested_swaps must be exact component names from the AVAILABLE COMPONENTS list above.
 
 OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no markdown fences, no extra text:
 {
   "alignment_score": 0.0,
   "interpretation": "one to two paragraph summary of what the game currently expresses rhetorically",
-  "mismatches": ["description of mismatch"],
-  "suggested_swaps": [
-    { "entity": "EntityName", "replace": "OldComponent", "with": "NewComponent" }
-  ]
+  "mismatches": ["description of mismatch"]
 }`;
 
   return buildAgentNode(llm, { systemPrompt });
@@ -466,102 +470,106 @@ Output ONLY the XML document — no prose, no code fences, no markdown, no addit
 
 INPUTS YOU WILL RECEIVE:
 - Original user concept (the rhetorical meaning of the game)
-- entityAttributeState: a map of entity name → attribute map. Each entity's attributes drive all game behaviour:
-    • isPlayer (bool): the entity the human controls
-    • isStatic (bool): cannot move
-    • movesAnyWay (bool): has any movement component
-    • growsOverTime / shrinksOverTime (bool): changes size over time
-    • isRemovedBy (entity name | null): this entity is destroyed by colliding with the named entity
-    • growsBy (entity name | null): this entity grows when colliding with the named entity
-    • shrinksBy (entity name | null): this entity shrinks when colliding with the named entity
-    • stopsBy (entity name | null): this entity stops moving when colliding with the named entity
-    • isDamagedBy (entity name | null): this entity takes damage from the named entity
-    • chasedBy (entity name | null): the named entity homes toward this entity
-    • isFleeing (bool): this entity runs away from the player
-    • speed (px/s), size (px), spawnRate (per/s): numeric parameters
-- recipeSelection: win/lose/structure/patch recipes and the concrete win_condition and lose_condition
-- microRhetoricsSelection: maps each relation (subject verb object) to a component type
-- rhetoricCritique: alignment score and interpretation from the rhetoric critic
+- entityAttributeState: map of entity name → attribute map (the sole source of truth for all entities and mechanics)
+- recipeSelection: win/lose/structure/patch recipes plus concrete win_condition and lose_condition objects
+- microRhetoricsSelection: maps each "Subject verb Object" relation to a component name
+- verifierReport: repairs that were applied (for audit trail only — do NOT re-apply them)
+- rhetoricCritique: alignment_score and interpretation (for metadata only)
 
-ATTRIBUTE-TO-COMPONENT MAPPING — derive entity <components> and <relations> from entityAttributeState:
-Entity intrinsic components (put in <components>):
-  movesAnyWay=true (and isPlayer=false) → RandomMovementComponent (unless another movement attribute applies)
-  chasedBy set → HomingMovementComponent on the chasing entity
-  isFleeing=true → FleeTargetComponent
-  growsOverTime=true → GrowOverTimeComponent
-  shrinksOverTime=true → ShrinkOverTimeComponent
-  isStatic=true → StaticObstacleComponent
-  spawnRate > 0 (non-player) → SpawnPeriodicallyComponent
-  isPlayer=true → PlayerControlledMovementComponent
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 1 — DERIVE ENTITY COMPONENTS
+For each entity in entityAttributeState, emit one <entity> element.
+Determine its <behavior> components from the attribute values (use ONLY components listed here):
 
-Relational components (put in <relations>):
-  isRemovedBy: entity A isRemovedBy B → <relation from="B" to="A" component="RemoveOnCollideComponent" />
-  growsBy: entity A growsBy B → <relation from="A" to="B" component="GrowOnCollideComponent" />
-  shrinksBy: entity A shrinksBy B → <relation from="A" to="B" component="ShrinkOnCollideComponent" />
-  stopsBy: entity A stopsBy B → <relation from="B" to="A" component="StopMovementOnCollideComponent" />
-  isDamagedBy: entity A isDamagedBy B → <relation from="B" to="A" component="DamageOnCollideComponent" />
+  isPlayer = true          → PlayerControlledMovementComponent
+  isStatic = true          → StaticObstacleComponent
+  movesAnyWay = true
+    AND isPlayer = false
+    AND isFleeing = false
+    AND chasedBy is null   → RandomMovementComponent
+  isFleeing = true         → FleeTargetComponent
+  chasedBy is not null     → the entity whose name equals chasedBy gets HomingMovementComponent
+  growsOverTime = true     → GrowOverTimeComponent
+  shrinksOverTime = true   → ShrinkOverTimeComponent
+  spawnRate > 0
+    AND isPlayer = false   → SpawnPeriodicallyComponent
 
-WIN/LOSE CONDITION MAPPING — derive XML elements from recipeSelection.win_condition and lose_condition:
-  win_condition.attribute = "isRemovedBy" → <winCondition recipe="..."><threshold score="10" /></winCondition>
-  win_condition.attribute = "growsOverTime" or "growsBy" → <winCondition recipe="..."><threshold size="{value}" /></winCondition>
-  win_condition.attribute = "movesAnyWay" with value ending in "s" → <winCondition recipe="..."><timer seconds="{value}" /></winCondition>
-  lose_condition.attribute = "isDamagedBy" → <loseCondition recipe="..."><health points="3" /></loseCondition>
-  lose_condition.attribute = "isRemovedBy" → <loseCondition recipe="..."><threshold count="0" /></loseCondition>
-  lose_condition.attribute = "movesAnyWay" with value ending in "s" → <loseCondition recipe="..."><timer seconds="{value}" /></loseCondition>
+STEP 2 — DERIVE INTERACTIONS
+For each non-null entity-ref attribute, emit one <interaction> element.
+Map each attribute to its interaction type:
 
-XML SCHEMA:
+  A.isRemovedBy = B  → <interaction actor="B" target="A" type="RemoveOnCollide" />
+  A.growsBy = B      → <interaction actor="A" target="B" type="GrowOnCollide" />
+  A.shrinksBy = B    → <interaction actor="A" target="B" type="ShrinkOnCollide" />
+  A.stopsBy = B      → <interaction actor="B" target="A" type="StopMovementOnCollide" />
+  A.isDamagedBy = B  → <interaction actor="B" target="A" type="DamageOnCollide" />
+
+STEP 3 — DERIVE WIN/LOSE CONDITIONS
+Map recipeSelection.win_condition and lose_condition to XML using these rules:
+
+  win_condition.attribute = "isRemovedBy"
+    → <win recipe="{win_recipe}" trigger="score" threshold="10" entity="{win_condition.entity}" />
+  win_condition.attribute = "growsOverTime" OR "growsBy"
+    → <win recipe="{win_recipe}" trigger="size" threshold="{win_condition.value}" entity="{win_condition.entity}" />
+  win_condition.attribute = "movesAnyWay" AND value ends in "s"
+    → <win recipe="{win_recipe}" trigger="survive" duration="{win_condition.value}" entity="{win_condition.entity}" />
+
+  lose_condition.attribute = "isDamagedBy"
+    → <lose recipe="{lose_recipe}" trigger="health" points="3" entity="{lose_condition.entity}" />
+  lose_condition.attribute = "isRemovedBy"
+    → <lose recipe="{lose_recipe}" trigger="eliminated" entity="{lose_condition.entity}" />
+  lose_condition.attribute = "movesAnyWay" AND value ends in "s"
+    → <lose recipe="{lose_recipe}" trigger="timeout" duration="{lose_condition.value}" entity="{lose_condition.entity}" />
+
+STEP 4 — DERIVE LAYOUT
+For each non-player entity with spawnRate > 0, emit one <spawn> element.
+zone: if the entity has HomingMovementComponent or FleeTargetComponent → "random"; otherwise → "top".
+interval: compute as 1 / spawnRate, rounded to 1 decimal place, with unit "s".
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+XML SCHEMA (fill every placeholder — no comments in output):
+
 <?xml version="1.0" encoding="UTF-8"?>
 <game version="1.0">
 
   <metadata
-    title="{short title derived from entity names}"
-    description="{one-line game premise}"
-    generatedFrom="{original concept map text}"
-    howToPlay="{1-2 sentence player instruction derived from the player entity and win/lose conditions}"
-    rhetoricTheme="{concise label ≤ 40 chars summarizing the conceptual theme from the rhetoric critique}"
+    title="{short title derived from entity names and concept}"
+    concept="{original concept map text verbatim}"
+    howToPlay="{1–2 sentence player instruction based on player entity and win/lose conditions}"
+    rhetoricTheme="{≤ 40 char label from rhetoric critique interpretation}"
+    alignmentScore="{rhetoric critique alignment_score as a decimal, e.g. 0.74}"
   />
 
   <entities>
-    <entity name="{EntityName}" isPlayer="{true|false}" displayName="{human-readable display name}">
-      <components>
-        <!-- ONLY intrinsic/behavioral components derived from entity attributes above. Do NOT put relational components here. -->
+    <entity name="{EntityName}" isPlayer="{true|false}" speed="{speed}" size="{size}" spawnRate="{spawnRate}">
+      <behavior>
         <component type="{ComponentType}" />
-      </components>
-      <parameters>
-        <param name="speed" value="{speed from entityAttributeState}" unit="px/s" />
-        <param name="size" value="{size from entityAttributeState}" unit="px" />
-        <param name="spawnRate" value="{spawnRate from entityAttributeState}" unit="per/s" />
-      </parameters>
+      </behavior>
     </entity>
   </entities>
 
-  <relations>
-    <!-- Derived from entity-ref attributes in entityAttributeState and micro-rhetoric selections. -->
-    <relation from="{EntityName}" to="{EntityName}" microRhetoric="{micro-rhetoric name}" component="{ComponentType}" verb="{action verb}" />
-  </relations>
+  <interactions>
+    <interaction actor="{EntityName}" target="{EntityName}" type="{InteractionType}" />
+  </interactions>
 
-  <winCondition recipe="{win_recipe from recipeSelection}">
-    <!-- child element derived from win_condition mapping above -->
-  </winCondition>
+  <win recipe="{win_recipe}" trigger="{trigger}" threshold="{value if applicable}" duration="{value if applicable}" entity="{entity}" />
 
-  <loseCondition recipe="{lose_recipe from recipeSelection}">
-    <!-- child element derived from lose_condition mapping above -->
-  </loseCondition>
+  <lose recipe="{lose_recipe}" trigger="{trigger}" points="{value if applicable}" duration="{value if applicable}" entity="{entity}" />
 
-  <layout structure="{structure_recipe from recipeSelection}">
-    <spawn entity="{EntityName}" zone="left|center|right|any" interval="{1/spawnRate seconds}" />
+  <layout structure="{structure_recipe}">
+    <spawn entity="{EntityName}" zone="{zone}" interval="{interval}" />
   </layout>
 
 </game>
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 RULES:
-- Include ALL entities from entityAttributeState
-- Mark exactly one entity as isPlayer="true" (the entity with isPlayer=true in entityAttributeState)
-- Use parameter values exactly as given in entityAttributeState (speed, size, spawnRate)
-- Every entity-ref attribute in entityAttributeState must produce exactly one <relation> element
-- Use the micro-rhetoric selections to fill in the microRhetoric and verb fields on <relation> elements
-- howToPlay must be a clear player-facing instruction
-- rhetoricTheme must match the rhetoric critique's interpretation theme`;
+- Include ALL entities from entityAttributeState — none may be omitted
+- Exactly one entity has isPlayer="true"
+- Use speed, size, spawnRate values exactly as given in entityAttributeState
+- Omit XML attributes that are not applicable (e.g. omit threshold= on a survive win, omit duration= on a score win)
+- Every non-null entity-ref attribute must produce exactly one <interaction> element
+- Do NOT output XML comments, only elements and attributes`;
 
   return buildAgentNode(llm, { systemPrompt });
 }

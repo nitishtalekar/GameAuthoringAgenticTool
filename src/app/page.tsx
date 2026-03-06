@@ -380,55 +380,7 @@ export default function Home() {
             stepNumber={6}
             title="Rhetoric Critique"
             data={gameState.rhetoricCritique}
-            isLatest={currentStep === 6 && !isLoading && !gameState.postSwapRhetoricCritique}
-          />
-        )}
-
-        {/* Step 6.5 — swap button (shown when alignment < 1 and swap not yet applied) */}
-        {gameState.rhetoricCritique &&
-          gameState.rhetoricCritique.alignment_score < 1 &&
-          !gameState.rhetoricSwapApplied && (
-            <div
-              style={{
-                marginBottom: 12,
-                padding: "12px 14px",
-                background: "#fffbeb",
-                border: "1px solid #f59e0b",
-                borderRadius: 6,
-              }}
-            >
-              <p style={{ margin: "0 0 8px", fontSize: 13, color: "#92400e" }}>
-                Alignment score:{" "}
-                <strong>{gameState.rhetoricCritique.alignment_score.toFixed(2)}</strong> —{" "}
-                {gameState.rhetoricCritique.suggested_swaps?.length ?? 0} component swap(s)
-                suggested to improve rhetorical alignment.
-              </p>
-              <button
-                onClick={() => advanceStep(65, gameState)}
-                disabled={isLoading}
-                style={{
-                  padding: "8px 16px",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  background: isLoading ? "#a0aec0" : "#d97706",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: 5,
-                  cursor: isLoading ? "not-allowed" : "pointer",
-                }}
-              >
-                {isLoading ? "Applying swaps..." : "Apply Rhetoric Swaps"}
-              </button>
-            </div>
-          )}
-
-        {/* Step 6.5 — post-swap critique result */}
-        {gameState.postSwapRhetoricCritique && (
-          <StepCard
-            stepNumber={6.5}
-            title="Rhetoric Swap & Re-Critique"
-            data={gameState.postSwapRhetoricCritique}
-            isLatest={!isLoading && !gameState.xmlOutput}
+            isLatest={currentStep === 6 && !isLoading}
           />
         )}
 
