@@ -1,357 +1,350 @@
 // component-behaviors.ts
-// Maps every micro-rhetoric component type → its runtime behavior descriptor.
-// Used by GameCanvas to determine AI movement, collision effects, and visual identity.
+// Runtime behavior descriptors consumed by GameCanvas and the UI legend.
+//
+// PLACEMENT RULES (enforced by the XML generator):
+//   "entity"   → individual component  → goes inside <entity><components>
+//   "relation" → relational component  → goes inside <relations> only, NEVER in <entity><components>
+//
+// GameCanvas merges both sets via mergeBehaviors() to drive AI movement,
+// time-based effects, collision handling, and visual color.
 
-export type BehaviorRole =
-  | "wanderer"          // RandomMovementComponent
-  | "patrol"            // PatrolBetweenPointsComponent
-  | "chaser"            // HomingMovementComponent
-  | "fleeer"            // FleeTargetComponent
-  | "grower_over_time"  // GrowOverTimeComponent
-  | "decayer"           // ShrinkOverTimeComponent
-  | "accelerator"       // IncreaseSpeedOverTimeComponent
-  | "spawner"           // SpawnPeriodicallyComponent
-  | "obstacle"          // StaticObstacleComponent
-  | "collector"         // AddScoreOnCollideComponent
-  | "damager"           // DamageOnCollideComponent
-  | "remover"           // RemoveOnCollideComponent
-  | "grower"            // GrowOnCollideComponent
-  | "shrinker"          // ShrinkOnCollideComponent
-  | "spawner_on_remove" // SpawnEntityOnRemoveComponent
-  | "pusher"            // ApplyForceOnCollideComponent
-  | "freezer"           // StopMovementOnCollideComponent
-  | "converter"         // TransformTargetIntoSelfComponent
-  | "passive";          // unknown / no mapped effect
+// ── Category ────────────────────────────────────────────────────────────────
+
+export type ComponentPlacement = "entity" | "relation";
+
+// ── Behavior descriptor ──────────────────────────────────────────────────────
 
 export interface ComponentBehavior {
-  role: BehaviorRole;
-  /** Phaser hex color used for entities whose dominant behavior is this role */
+  /** Where this component is placed in the XML output. */
+  placement: ComponentPlacement;
+
+  /** Phaser hex color for entities whose dominant component is this one. */
   color: number;
 
-  // ── Intrinsic / movement flags ─────────────────────────────────────────────
-  /** Placed as a StaticGroup obstacle — never moves */
+  /** One-line label shown in the in-game entity legend. */
+  description: string;
+
+  // ── Individual (intrinsic) flags — only set on placement="entity" ──────────
+
+  /** Entity is added to a StaticGroup and never moves. */
   isStatic: boolean;
-  /** AI moves toward the player each frame */
+  /** AI moves toward the player every frame at entity speed. */
   movesTowardPlayer: boolean;
-  /** AI moves away from the player each frame */
+  /** AI moves directly away from the player every frame. */
   movesAwayFromPlayer: boolean;
-  /** Moves back-and-forth between two X patrol points */
+  /** AI moves randomly, changing direction every ~1.5–2.5 s. */
+  wandersRandomly: boolean;
+  /** AI moves back-and-forth on a fixed horizontal range. */
   patrolsBackAndForth: boolean;
-  /** Speed increases each second */
+  /** Entity speed increases by ~5 px/s each second (capped at 400). */
   acceleratesOverTime: boolean;
-  /** Entity size grows each frame */
+  /** Entity grows by 0.02 px each frame until destroyed externally. */
   growsOverTime: boolean;
-  /** Entity size shrinks each frame; destroyed when below minimum */
+  /** Entity shrinks by 0.03 px each frame; auto-destroyed when width < 4 px. */
   shrinksOverTime: boolean;
-  /** Periodically spawns a clone of itself */
+  /** Spawns a clone of itself at its spawnRate parameter interval (seconds). */
   spawnsOnInterval: boolean;
 
-  // ── Collision-triggered effect flags ──────────────────────────────────────
-  /** Entity is removed when it contacts the player */
-  removeOnContact: boolean;
-  /** Player loses 1 HP on contact */
-  damagesPlayer: boolean;
-  /** Player gains +1 score on contact */
-  scoreOnContact: boolean;
-  /** This entity grows larger on contact with the player */
-  growsOnContact: boolean;
-  /** Player shrinks on contact */
-  shrinksPlayerOnContact: boolean;
-  /** Player is knocked back on contact */
-  pushesPlayerOnContact: boolean;
-  /** Player velocity is zeroed briefly on contact */
-  freezesPlayerOnContact: boolean;
+  // ── Relational (collision) flags — only set on placement="relation" ────────
 
-  /** Human-readable summary shown in the entity legend */
-  description: string;
+  /** Entity is destroyed when it overlaps the player. */
+  removeOnContact: boolean;
+  /** Player loses 1 HP on overlap (1.5 s invincibility window applied). */
+  damagesPlayer: boolean;
+  /** Player gains +1 score on overlap. */
+  scoreOnContact: boolean;
+  /** Entity grows by 6 px each time it overlaps the player. */
+  growsOnContact: boolean;
+  /** Player shrinks by 6 px on overlap (minimum 10 px). */
+  shrinksPlayerOnContact: boolean;
+  /** Player is knocked back at 350 px/s away from the entity on overlap. */
+  pushesPlayerOnContact: boolean;
+  /** Player velocity is zeroed for 1.2 s on overlap. */
+  freezesPlayerOnContact: boolean;
 }
+
+// ── Component registry ───────────────────────────────────────────────────────
 
 export const COMPONENT_BEHAVIORS: Record<string, ComponentBehavior> = {
 
-  // ── Individual: self-contained behaviors ─────────────────────────────────
+  // ── Individual: placed in <entity><components> ────────────────────────────
 
   RandomMovementComponent: {
-    role: "wanderer", color: 0x9b59b6, isStatic: false,
-    movesTowardPlayer: false, movesAwayFromPlayer: false,
-    patrolsBackAndForth: false, acceleratesOverTime: false,
-    growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
+    placement: "entity", color: 0x9b59b6,
+    description: "Drifts in random directions, changing course every 1.5–2.5 s",
+    isStatic: false, movesTowardPlayer: false, movesAwayFromPlayer: false,
+    wandersRandomly: true, patrolsBackAndForth: false,
+    acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
     removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: false,
-    pushesPlayerOnContact: false, freezesPlayerOnContact: false,
-    description: "Drifts in random directions",
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
   },
 
   PatrolBetweenPointsComponent: {
-    role: "patrol", color: 0x1abc9c, isStatic: false,
-    movesTowardPlayer: false, movesAwayFromPlayer: false,
-    patrolsBackAndForth: true,
-    acceleratesOverTime: false,
-    growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
-    removeOnContact: false, damagesPlayer: true, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: false,
-    pushesPlayerOnContact: false, freezesPlayerOnContact: false,
-    description: "Patrols a fixed route — stay clear",
+    placement: "entity", color: 0x1abc9c,
+    description: "Moves back and forth horizontally within a fixed 240 px range",
+    isStatic: false, movesTowardPlayer: false, movesAwayFromPlayer: false,
+    wandersRandomly: false, patrolsBackAndForth: true,
+    acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
+    removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
   },
 
   HomingMovementComponent: {
-    role: "chaser", color: 0xc0392b, isStatic: false,
-    movesTowardPlayer: true, movesAwayFromPlayer: false,
-    patrolsBackAndForth: false, acceleratesOverTime: false,
-    growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
-    removeOnContact: false, damagesPlayer: true, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: false,
-    pushesPlayerOnContact: false, freezesPlayerOnContact: false,
-    description: "Locks onto player and chases relentlessly",
+    placement: "entity", color: 0xc0392b,
+    description: "Steers directly toward the player every frame at entity speed",
+    isStatic: false, movesTowardPlayer: true, movesAwayFromPlayer: false,
+    wandersRandomly: false, patrolsBackAndForth: false,
+    acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
+    removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
   },
 
   FleeTargetComponent: {
-    role: "fleeer", color: 0xf39c12, isStatic: false,
-    movesTowardPlayer: false, movesAwayFromPlayer: true,
-    patrolsBackAndForth: false, acceleratesOverTime: false,
-    growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
-    removeOnContact: true, damagesPlayer: false, scoreOnContact: true,
-    growsOnContact: false, shrinksPlayerOnContact: false,
-    pushesPlayerOnContact: false, freezesPlayerOnContact: false,
-    description: "Runs away — catch it for points",
+    placement: "entity", color: 0xf39c12,
+    description: "Moves directly away from the player every frame at entity speed",
+    isStatic: false, movesTowardPlayer: false, movesAwayFromPlayer: true,
+    wandersRandomly: false, patrolsBackAndForth: false,
+    acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
+    removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
   },
 
   GrowOverTimeComponent: {
-    role: "grower_over_time", color: 0x27ae60, isStatic: false,
-    movesTowardPlayer: false, movesAwayFromPlayer: false,
-    patrolsBackAndForth: false, acceleratesOverTime: false,
-    growsOverTime: true,
-    shrinksOverTime: false, spawnsOnInterval: false,
+    placement: "entity", color: 0x27ae60,
+    description: "Expands by 0.02 px per frame continuously; only stops if destroyed by another component",
+    isStatic: false, movesTowardPlayer: false, movesAwayFromPlayer: false,
+    wandersRandomly: false, patrolsBackAndForth: false,
+    acceleratesOverTime: false, growsOverTime: true, shrinksOverTime: false, spawnsOnInterval: false,
     removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: false,
-    pushesPlayerOnContact: false, freezesPlayerOnContact: false,
-    description: "Grows larger over time",
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
   },
 
   ShrinkOverTimeComponent: {
-    role: "decayer", color: 0x636e72, isStatic: false,
-    movesTowardPlayer: false, movesAwayFromPlayer: false,
-    patrolsBackAndForth: false, acceleratesOverTime: false,
-    growsOverTime: false,
-    shrinksOverTime: true,
-    spawnsOnInterval: false,
+    placement: "entity", color: 0x636e72,
+    description: "Shrinks by 0.03 px per frame; auto-destroyed when width drops below 4 px",
+    isStatic: false, movesTowardPlayer: false, movesAwayFromPlayer: false,
+    wandersRandomly: false, patrolsBackAndForth: false,
+    acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: true, spawnsOnInterval: false,
     removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: false,
-    pushesPlayerOnContact: false, freezesPlayerOnContact: false,
-    description: "Fades and disappears over time",
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
   },
 
   IncreaseSpeedOverTimeComponent: {
-    role: "accelerator", color: 0xff7675, isStatic: false,
-    movesTowardPlayer: true, movesAwayFromPlayer: false,
-    patrolsBackAndForth: false,
-    acceleratesOverTime: true,
-    growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
-    removeOnContact: false, damagesPlayer: true, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: false,
-    pushesPlayerOnContact: false, freezesPlayerOnContact: false,
-    description: "Accelerates over time — growing threat",
+    placement: "entity", color: 0xff7675,
+    description: "Chases the player and gains +5 px/s every second (cap 400 px/s); combine with HomingMovementComponent",
+    isStatic: false, movesTowardPlayer: true, movesAwayFromPlayer: false,
+    wandersRandomly: false, patrolsBackAndForth: false,
+    acceleratesOverTime: true, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
+    removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
   },
 
   SpawnPeriodicallyComponent: {
-    role: "spawner", color: 0x8e44ad, isStatic: false,
-    movesTowardPlayer: false, movesAwayFromPlayer: false,
-    patrolsBackAndForth: false, acceleratesOverTime: false,
-    growsOverTime: false, shrinksOverTime: false,
-    spawnsOnInterval: true,
+    placement: "entity", color: 0x8e44ad,
+    description: "Spawns a clone of itself at the interval defined by the entity's spawnRate parameter (seconds)",
+    isStatic: false, movesTowardPlayer: false, movesAwayFromPlayer: false,
+    wandersRandomly: false, patrolsBackAndForth: false,
+    acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: true,
     removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: false,
-    pushesPlayerOnContact: false, freezesPlayerOnContact: false,
-    description: "Periodically creates more of its kind",
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
   },
 
   StaticObstacleComponent: {
-    role: "obstacle", color: 0x7f8c8d, isStatic: true,
-    movesTowardPlayer: false, movesAwayFromPlayer: false,
-    patrolsBackAndForth: false, acceleratesOverTime: false,
-    growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
+    placement: "entity", color: 0x7f8c8d,
+    description: "Placed in a Phaser StaticGroup — never moves; blocks both player and enemy physics bodies",
+    isStatic: true, movesTowardPlayer: false, movesAwayFromPlayer: false,
+    wandersRandomly: false, patrolsBackAndForth: false,
+    acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
     removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: false,
-    pushesPlayerOnContact: false, freezesPlayerOnContact: false,
-    description: "Immovable obstacle — blocks movement",
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
   },
 
-  // ── Relational: collision-triggered effects ───────────────────────────────
+  // ── Relational: placed in <relations> only, NEVER in <entity><components> ──
 
   AddScoreOnCollideComponent: {
-    role: "collector", color: 0xf1c40f, isStatic: false,
-    movesTowardPlayer: false, movesAwayFromPlayer: false,
-    patrolsBackAndForth: false, acceleratesOverTime: false,
-    growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
+    placement: "relation", color: 0xf1c40f,
+    description: "On player overlap: awards +1 score and removes this entity",
+    isStatic: false, movesTowardPlayer: false, movesAwayFromPlayer: false,
+    wandersRandomly: false, patrolsBackAndForth: false,
+    acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
     removeOnContact: true, damagesPlayer: false, scoreOnContact: true,
-    growsOnContact: false, shrinksPlayerOnContact: false,
-    pushesPlayerOnContact: false, freezesPlayerOnContact: false,
-    description: "Collectible — touch for points",
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
   },
 
   DamageOnCollideComponent: {
-    role: "damager", color: 0xc0392b, isStatic: false,
-    movesTowardPlayer: false, movesAwayFromPlayer: false,
-    patrolsBackAndForth: false, acceleratesOverTime: false,
-    growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
+    placement: "relation", color: 0xc0392b,
+    description: "On player overlap: reduces player HP by 1 (1.5 s invincibility window prevents rapid hits)",
+    isStatic: false, movesTowardPlayer: false, movesAwayFromPlayer: false,
+    wandersRandomly: false, patrolsBackAndForth: false,
+    acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
     removeOnContact: false, damagesPlayer: true, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: false,
-    pushesPlayerOnContact: false, freezesPlayerOnContact: false,
-    description: "Damages the player on contact",
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
   },
 
   RemoveOnCollideComponent: {
-    role: "remover", color: 0xe67e22, isStatic: false,
-    movesTowardPlayer: false, movesAwayFromPlayer: false,
-    patrolsBackAndForth: false, acceleratesOverTime: false,
-    growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
+    placement: "relation", color: 0xe67e22,
+    description: "On player overlap: removes this entity and deals 1 HP damage to the player",
+    isStatic: false, movesTowardPlayer: false, movesAwayFromPlayer: false,
+    wandersRandomly: false, patrolsBackAndForth: false,
+    acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
     removeOnContact: true, damagesPlayer: true, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: false,
-    pushesPlayerOnContact: false, freezesPlayerOnContact: false,
-    description: "Destroys itself and hurts player on contact",
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
   },
 
   GrowOnCollideComponent: {
-    role: "grower", color: 0x2ecc71, isStatic: false,
-    movesTowardPlayer: true, movesAwayFromPlayer: false,
-    patrolsBackAndForth: false, acceleratesOverTime: false,
-    growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
+    placement: "relation", color: 0x2ecc71,
+    description: "On player overlap: this entity grows by 6 px (width and height); player is unaffected",
+    isStatic: false, movesTowardPlayer: false, movesAwayFromPlayer: false,
+    wandersRandomly: false, patrolsBackAndForth: false,
+    acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
     removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
-    growsOnContact: true,
-    shrinksPlayerOnContact: false,
-    pushesPlayerOnContact: false, freezesPlayerOnContact: false,
-    description: "Grows larger on every contact",
+    growsOnContact: true, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
   },
 
   ShrinkOnCollideComponent: {
-    role: "shrinker", color: 0xbdc3c7, isStatic: false,
-    movesTowardPlayer: false, movesAwayFromPlayer: false,
-    patrolsBackAndForth: false, acceleratesOverTime: false,
-    growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
+    placement: "relation", color: 0xbdc3c7,
+    description: "On player overlap: player shrinks by 6 px (minimum 10 px); entity is unaffected",
+    isStatic: false, movesTowardPlayer: false, movesAwayFromPlayer: false,
+    wandersRandomly: false, patrolsBackAndForth: false,
+    acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
     removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
-    growsOnContact: false,
-    shrinksPlayerOnContact: true,
-    pushesPlayerOnContact: false, freezesPlayerOnContact: false,
-    description: "Shrinks the player on contact",
+    growsOnContact: false, shrinksPlayerOnContact: true, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
   },
 
   SpawnEntityOnRemoveComponent: {
-    role: "spawner_on_remove", color: 0x6d4c41, isStatic: false,
-    movesTowardPlayer: false, movesAwayFromPlayer: false,
-    patrolsBackAndForth: false, acceleratesOverTime: false,
-    growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
+    placement: "relation", color: 0x6d4c41,
+    description: "When this entity is removed, spawns new entities at its last position",
+    isStatic: false, movesTowardPlayer: false, movesAwayFromPlayer: false,
+    wandersRandomly: false, patrolsBackAndForth: false,
+    acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
     removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: false,
-    pushesPlayerOnContact: false, freezesPlayerOnContact: false,
-    description: "Spawns entities when destroyed",
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
   },
 
   ApplyForceOnCollideComponent: {
-    role: "pusher", color: 0xe67e22, isStatic: false,
-    movesTowardPlayer: false, movesAwayFromPlayer: false,
-    patrolsBackAndForth: false, acceleratesOverTime: false,
-    growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
+    placement: "relation", color: 0xe67e22,
+    description: "On player overlap: knocks the player back at 350 px/s in the direction away from this entity",
+    isStatic: false, movesTowardPlayer: false, movesAwayFromPlayer: false,
+    wandersRandomly: false, patrolsBackAndForth: false,
+    acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
     removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: false,
-    pushesPlayerOnContact: true,
-    freezesPlayerOnContact: false,
-    description: "Pushes the player away on contact",
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: true, freezesPlayerOnContact: false,
   },
 
   StopMovementOnCollideComponent: {
-    role: "freezer", color: 0x74b9ff, isStatic: false,
-    movesTowardPlayer: false, movesAwayFromPlayer: false,
-    patrolsBackAndForth: false, acceleratesOverTime: false,
-    growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
+    placement: "relation", color: 0x74b9ff,
+    description: "On player overlap: sets player velocity to (0, 0) for 1.2 s; entity is unaffected",
+    isStatic: false, movesTowardPlayer: false, movesAwayFromPlayer: false,
+    wandersRandomly: false, patrolsBackAndForth: false,
+    acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
     removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: false,
-    pushesPlayerOnContact: false,
-    freezesPlayerOnContact: true,
-    description: "Halts player movement on contact",
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: true,
   },
 
   TransformTargetIntoSelfComponent: {
-    role: "converter", color: 0x6c5ce7, isStatic: false,
-    movesTowardPlayer: true, movesAwayFromPlayer: false,
-    patrolsBackAndForth: false, acceleratesOverTime: false,
-    growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
+    placement: "relation", color: 0x6c5ce7,
+    description: "On player overlap: replaces the contacted entity with a new copy of this entity's type",
+    isStatic: false, movesTowardPlayer: false, movesAwayFromPlayer: false,
+    wandersRandomly: false, patrolsBackAndForth: false,
+    acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
     removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: false,
-    pushesPlayerOnContact: false, freezesPlayerOnContact: false,
-    description: "Converts touched entities into its own kind",
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
   },
 };
 
+// ── Fallback ─────────────────────────────────────────────────────────────────
+
 const PASSIVE_BEHAVIOR: ComponentBehavior = {
-  role: "passive", color: 0x9b59b6, isStatic: false,
-  movesTowardPlayer: false, movesAwayFromPlayer: false,
-  patrolsBackAndForth: false, acceleratesOverTime: false,
-  growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
-  removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
-  growsOnContact: false, shrinksPlayerOnContact: false,
-  pushesPlayerOnContact: false, freezesPlayerOnContact: false,
+  placement: "entity", color: 0x9b59b6,
   description: "Unknown component — no runtime effect",
+  isStatic: false, movesTowardPlayer: false, movesAwayFromPlayer: false,
+  wandersRandomly: false, patrolsBackAndForth: false,
+  acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
+  removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
+  growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
 };
+
+// ── Lookup ───────────────────────────────────────────────────────────────────
 
 /** Returns the behavior descriptor for a given component type string. */
 export function getBehavior(componentType: string): ComponentBehavior {
   return COMPONENT_BEHAVIORS[componentType] ?? PASSIVE_BEHAVIOR;
 }
 
-/**
- * Given a list of component types, returns the single most gameplay-significant
- * behavior using a fixed priority order. Used by page.tsx for the UI legend.
- */
-const ROLE_PRIORITY: BehaviorRole[] = [
-  "obstacle", "chaser", "collector", "damager", "remover",
-  "converter", "grower", "fleeer", "wanderer", "patrol",
-  "accelerator", "spawner", "shrinker", "freezer", "pusher",
-  "spawner_on_remove", "decayer", "grower_over_time", "passive",
+// ── Priority-ordered role resolution ─────────────────────────────────────────
+// Used to pick the dominant color/description when multiple components are merged.
+// Order: most visually significant / gameplay-defining first.
+
+const PRIORITY_ORDER: string[] = [
+  "StaticObstacleComponent",
+  "HomingMovementComponent",
+  "AddScoreOnCollideComponent",
+  "DamageOnCollideComponent",
+  "RemoveOnCollideComponent",
+  "TransformTargetIntoSelfComponent",
+  "GrowOnCollideComponent",
+  "FleeTargetComponent",
+  "RandomMovementComponent",
+  "PatrolBetweenPointsComponent",
+  "IncreaseSpeedOverTimeComponent",
+  "SpawnPeriodicallyComponent",
+  "ShrinkOnCollideComponent",
+  "StopMovementOnCollideComponent",
+  "ApplyForceOnCollideComponent",
+  "SpawnEntityOnRemoveComponent",
+  "ShrinkOverTimeComponent",
+  "GrowOverTimeComponent",
 ];
 
-export function dominantBehavior(componentTypes: string[]): ComponentBehavior {
-  if (componentTypes.length === 0) return PASSIVE_BEHAVIOR;
-  const behaviors = componentTypes.map(getBehavior);
-  for (const role of ROLE_PRIORITY) {
-    const match = behaviors.find((b) => b.role === role);
-    if (match) return match;
-  }
-  return PASSIVE_BEHAVIOR;
-}
-
 /**
- * Merges all component behaviors into one object by OR-ing all boolean flags.
- * Color, role, and description are taken from the highest-priority behavior.
- * Use this in GameCanvas to correctly combine intrinsic + relational components.
+ * Merges all component behaviors into one object by OR-ing every boolean flag.
+ * color and description are taken from the highest-priority component in the list.
+ * Use this in GameCanvas to combine intrinsic + relational components per entity.
  */
 export function mergeBehaviors(componentTypes: string[]): ComponentBehavior {
   if (componentTypes.length === 0) return PASSIVE_BEHAVIOR;
   const behaviors = componentTypes.map(getBehavior);
 
-  // Priority-ordered color/role/description selection
+  // Pick primary for color/description based on priority order
   let primary = PASSIVE_BEHAVIOR;
-  for (const role of ROLE_PRIORITY) {
-    const match = behaviors.find((b) => b.role === role);
-    if (match) { primary = match; break; }
+  for (const name of PRIORITY_ORDER) {
+    if (componentTypes.includes(name)) {
+      primary = getBehavior(name);
+      break;
+    }
   }
 
   return {
-    role: primary.role,
+    placement: primary.placement,
     color: primary.color,
     description: primary.description,
-    isStatic: behaviors.some((b) => b.isStatic),
-    movesTowardPlayer: behaviors.some((b) => b.movesTowardPlayer),
-    movesAwayFromPlayer: behaviors.some((b) => b.movesAwayFromPlayer),
-    patrolsBackAndForth: behaviors.some((b) => b.patrolsBackAndForth),
-    acceleratesOverTime: behaviors.some((b) => b.acceleratesOverTime),
-    growsOverTime: behaviors.some((b) => b.growsOverTime),
-    shrinksOverTime: behaviors.some((b) => b.shrinksOverTime),
-    spawnsOnInterval: behaviors.some((b) => b.spawnsOnInterval),
-    removeOnContact: behaviors.some((b) => b.removeOnContact),
-    damagesPlayer: behaviors.some((b) => b.damagesPlayer),
-    scoreOnContact: behaviors.some((b) => b.scoreOnContact),
-    growsOnContact: behaviors.some((b) => b.growsOnContact),
+    isStatic:               behaviors.some((b) => b.isStatic),
+    movesTowardPlayer:      behaviors.some((b) => b.movesTowardPlayer),
+    movesAwayFromPlayer:    behaviors.some((b) => b.movesAwayFromPlayer),
+    wandersRandomly:        behaviors.some((b) => b.wandersRandomly),
+    patrolsBackAndForth:    behaviors.some((b) => b.patrolsBackAndForth),
+    acceleratesOverTime:    behaviors.some((b) => b.acceleratesOverTime),
+    growsOverTime:          behaviors.some((b) => b.growsOverTime),
+    shrinksOverTime:        behaviors.some((b) => b.shrinksOverTime),
+    spawnsOnInterval:       behaviors.some((b) => b.spawnsOnInterval),
+    removeOnContact:        behaviors.some((b) => b.removeOnContact),
+    damagesPlayer:          behaviors.some((b) => b.damagesPlayer),
+    scoreOnContact:         behaviors.some((b) => b.scoreOnContact),
+    growsOnContact:         behaviors.some((b) => b.growsOnContact),
     shrinksPlayerOnContact: behaviors.some((b) => b.shrinksPlayerOnContact),
-    pushesPlayerOnContact: behaviors.some((b) => b.pushesPlayerOnContact),
+    pushesPlayerOnContact:  behaviors.some((b) => b.pushesPlayerOnContact),
     freezesPlayerOnContact: behaviors.some((b) => b.freezesPlayerOnContact),
   };
+}
+
+/**
+ * Returns the single highest-priority behavior from a list of component types.
+ * Used by page.tsx for the UI legend.
+ */
+export function dominantBehavior(componentTypes: string[]): ComponentBehavior {
+  if (componentTypes.length === 0) return PASSIVE_BEHAVIOR;
+  for (const name of PRIORITY_ORDER) {
+    if (componentTypes.includes(name)) return getBehavior(name);
+  }
+  return PASSIVE_BEHAVIOR;
 }

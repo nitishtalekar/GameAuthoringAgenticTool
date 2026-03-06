@@ -534,7 +534,7 @@ class GameScene extends Phaser.Scene {
           }
           eb.setVelocity(enemy._patrolDir * entSpeed, 0);
 
-        } else if (behavior.role === "wanderer") {
+        } else if (behavior.wandersRandomly) {
           // Timer-based direction change (every 1.5–2.5 seconds)
           enemy._wanderTimer -= delta / 1000;
           if (enemy._wanderTimer <= 0) {
