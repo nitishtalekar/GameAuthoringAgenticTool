@@ -406,11 +406,11 @@ export default function PlayGamePage() {
     >
       {/* Header */}
       <div style={{ marginBottom: 32 }}>
-        <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, color: "#1a1a2e" }}>
+        <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, color: "white" }}>
           Play Game
         </h1>
-        <p style={{ margin: "6px 0 0", color: "#666", fontSize: 15 }}>
-          Paste your Game-O-Matic XML below and click &ldquo;Load Game&rdquo; to play.
+        <p style={{ margin: "6px 0 0", color: "white", fontSize: 15 }}>
+          Paste your XML below and click &ldquo;Load Game&rdquo; to play.
         </p>
         <a
           href="/"
@@ -431,11 +431,11 @@ export default function PlayGamePage() {
         <section style={{ marginBottom: 24 }}>
           <label
             htmlFor="xml-input"
-            style={{ display: "block", fontWeight: 600, marginBottom: 8, fontSize: 14 }}
+            style={{ display: "block", fontWeight: 600, marginBottom: 8, fontSize: 14, color: "#8D86C9" }}
           >
             Game XML Specification
           </label>
-          <p style={{ margin: "0 0 10px", fontSize: 13, color: "#666" }}>
+          <p style={{ margin: "0 0 10px", fontSize: 13, color: "white" }}>
             Copy the XML output from the authoring tool and paste it here.
           </p>
           <textarea
@@ -454,7 +454,7 @@ export default function PlayGamePage() {
               resize: "vertical",
               boxSizing: "border-box",
               lineHeight: 1.5,
-              color: "#1a1a2e",
+              color: "#F2E9E4",
             }}
           />
           {parseError && (
@@ -506,7 +506,7 @@ export default function PlayGamePage() {
             }}
           >
             <div>
-              <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>
+              <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700., color: "white" }}>
                 {parsedGame.title}
               </h2>
               {parsedGame.description && (

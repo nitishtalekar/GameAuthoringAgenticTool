@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<game version="1.0">
+
+  <metadata
+    title="Lion and Deer Chase"
+    concept="Lion kills deer. Deer runs everywhere. Trees stop deer"
+    howToPlay="Control the deer and survive for 60 seconds while avoiding the lion. Use trees to block the lion's path."
+    rhetoricTheme="Lion chases deer"
+    alignmentScore="0.85"
+  />
+
+  <entities>
+    <entity name="lion" isPlayer="false" speed="200" size="48" spawnRate="0.5">
+      <behavior isPlayer="false" isStatic="false" movesAnyWay="false" growsOverTime="false" shrinksOverTime="false" isFleeing="false" />
+    </entity>
+    <entity name="deer" isPlayer="true" speed="420" size="32" spawnRate="0">
+      <behavior isPlayer="true" isStatic="false" movesAnyWay="true" growsOverTime="false" shrinksOverTime="false" isFleeing="false" />
+    </entity>
+    <entity name="trees" isPlayer="false" speed="0" size="64" spawnRate="1">
+      <behavior isPlayer="false" isStatic="true" movesAnyWay="false" growsOverTime="false" shrinksOverTime="false" isFleeing="false" />
+    </entity>
+  </entities>
+
+  <interactions>
+    <interaction actor="lion" target="deer" attribute="isRemovedBy" />
+    <interaction actor="trees" target="deer" attribute="stopsBy" />
+  </interactions>
+
+  <win recipe="Survive Duration" trigger="survive" duration="60s" entity="deer" />
+
+  <lose recipe="Health Depletion" trigger="eliminated" entity="deer" />
+
+  <layout structure="Chase Layout">
+    <spawn entity="lion" zone="top" interval="2.0s" />
+    <spawn entity="trees" zone="middle" interval="1.0s" />
+  </layout>
+
+</game>
