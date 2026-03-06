@@ -10,7 +10,7 @@ import {
   buildRhetoricCriticAgent,
   buildXmlGenerationAgent,
 } from "@/lib/game/agents";
-import { validateXml, serializeToXml } from "@/lib/game/xml-generator";
+import { validateXml, extractXml } from "@/lib/game/xml-generator";
 import type {
   StepRequest,
   StepResponse,
@@ -305,14 +305,11 @@ async function runAgent7(state: GameState): Promise<GameState> {
 
   const humanMsg = `Original user concept: ${state.input}
 
-Entity attribute state (all entities and their mechanics):
+Entity attribute state (all entities and their mechanics — derive all components and behaviors from this):
 ${JSON.stringify(state.entityAttributeState, null, 2)}
 
 Recipe selection:
 ${JSON.stringify(state.recipeSelection, null, 2)}
-
-Micro-rhetoric selections:
-${JSON.stringify(state.microRhetoricsSelection?.selections, null, 2)}
 
 Verifier repairs applied:
 ${JSON.stringify(state.verifierReport?.repairs, null, 2)}
@@ -328,17 +325,13 @@ Generate the complete XML game specification now.`;
   });
 
   const raw = getLastMessageContent(finalState.messages);
+  const cleaned = extractXml(raw);
 
-  // Strip markdown fences if LLM added them despite instructions
-  const cleaned = raw
-    .replace(/^```xml\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .trim();
+  if (!validateXml(cleaned)) {
+    throw new Error("XML generation agent produced invalid output.");
+  }
 
-  const xmlOutput = validateXml(cleaned) ? cleaned : serializeToXml(state);
-
-  return { ...state, step: 7, xmlOutput };
+  return { ...state, step: 7, xmlOutput: cleaned };
 }
 
 // --- Pure helper: apply a list of repair/suggestion actions to entityAttributeState and recipeSelection ---
@@ -410,14 +403,12 @@ function applyVerifierRepairs(
   verifierReport: any
 ): { entityAttributeState: EntityAttributeState; recipeSelection: typeof recipeSelection } {
   const repairs: unknown[] = verifierReport?.repairs ?? [];
-  const suggestions: unknown[] = verifierReport?.suggestions ?? [];
-  const allActions = [...repairs, ...suggestions];
 
-  if (allActions.length === 0) {
+  if (repairs.length === 0) {
     return { entityAttributeState, recipeSelection };
   }
 
-  return applyActions(entityAttributeState, recipeSelection, allActions);
+  return applyActions(entityAttributeState, recipeSelection, repairs);
 }
 
 // --- Utility: safe JSON parse with descriptive error ---

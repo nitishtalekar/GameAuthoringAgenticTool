@@ -312,16 +312,14 @@ b. The relationship implied by the relation is encoded as at least one attribute
 c. The win/lose conditions are consistent with the most prominent relations in the concept graph (e.g. if the graph says "Player destroys Asteroid", the win condition should involve Asteroid isRemovedBy Player).
 If a concept graph relation is NOT encoded in entityAttributeState, add an AlterAttribute suggestion to encode it.
 
-SUGGESTIONS vs REPAIRS:
-- "repairs" = actions you WILL apply (minimal, high-confidence fixes for playability)
-- "suggestions" = improvements that are not blocking playability — includes both pacing/balance tweaks (AdjustParameter) AND concept graph consistency gaps (AlterAttribute to encode a missing relation). Use the same operator structure as repairs.
+All identified issues — whether blocking playability or improving concept graph consistency/balance — are returned as a single unified "repairs" list and ALL will be applied to entityAttributeState and recipeSelection.
 
-If all checks pass, set isPlayable=true and return empty issues/repairs arrays.
+If all checks pass, set isPlayable=true and return an empty repairs array.
 
 OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no markdown fences, no extra text:
 {
   "isPlayable": true,
-  "issues": ["description of each playability issue found"],
+  "issues": ["description of each issue found (playability blocking or concept consistency gap)"],
   "repairs": [
     {
       "operator": "AlterAttribute",
@@ -349,15 +347,13 @@ OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no
       "target": "EntityName",
       "parameter": "speed",
       "value": 150
-    }
-  ],
-  "suggestions": [
+    },
     {
       "operator": "AdjustParameter",
       "target": "EntityName",
-      "description": "Increase spawn rate for better pacing",
       "parameter": "spawnRate",
-      "value": 2.5
+      "value": 2.5,
+      "description": "Increase spawn rate for better pacing"
     },
     {
       "operator": "AlterAttribute",
@@ -472,37 +468,31 @@ INPUTS YOU WILL RECEIVE:
 - Original user concept (the rhetorical meaning of the game)
 - entityAttributeState: map of entity name → attribute map (the sole source of truth for all entities and mechanics)
 - recipeSelection: win/lose/structure/patch recipes plus concrete win_condition and lose_condition objects
-- microRhetoricsSelection: maps each "Subject verb Object" relation to a component name
 - verifierReport: repairs that were applied (for audit trail only — do NOT re-apply them)
 - rhetoricCritique: alignment_score and interpretation (for metadata only)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 1 — DERIVE ENTITY COMPONENTS
-For each entity in entityAttributeState, emit one <entity> element.
-Determine its <behavior> components from the attribute values (use ONLY components listed here):
+STEP 1 — EMIT ENTITY BEHAVIORS
+For each entity in entityAttributeState, emit one <entity> element containing a self-closing <behavior> element.
+The <behavior> element carries every boolean and entity-ref attribute from that entity's attribute map directly as XML attributes.
+Include ALL of the following attributes on <behavior>, using the exact values from entityAttributeState:
 
-  isPlayer = true          → PlayerControlledMovementComponent
-  isStatic = true          → StaticObstacleComponent
-  movesAnyWay = true
-    AND isPlayer = false
-    AND isFleeing = false
-    AND chasedBy is null   → RandomMovementComponent
-  isFleeing = true         → FleeTargetComponent
-  chasedBy is not null     → the entity whose name equals chasedBy gets HomingMovementComponent
-  growsOverTime = true     → GrowOverTimeComponent
-  shrinksOverTime = true   → ShrinkOverTimeComponent
-  spawnRate > 0
-    AND isPlayer = false   → SpawnPeriodicallyComponent
+  isPlayer="{true|false}"
+  isStatic="{true|false}"
+  movesAnyWay="{true|false}"
+  growsOverTime="{true|false}"
+  shrinksOverTime="{true|false}"
+  isFleeing="{true|false}"
 
 STEP 2 — DERIVE INTERACTIONS
-For each non-null entity-ref attribute, emit one <interaction> element.
+For each non-null entity-ref attribute across all entities, emit one <interaction> element.
 Map each attribute to its interaction type:
 
-  A.isRemovedBy = B  → <interaction actor="B" target="A" type="RemoveOnCollide" />
-  A.growsBy = B      → <interaction actor="A" target="B" type="GrowOnCollide" />
-  A.shrinksBy = B    → <interaction actor="A" target="B" type="ShrinkOnCollide" />
-  A.stopsBy = B      → <interaction actor="B" target="A" type="StopMovementOnCollide" />
-  A.isDamagedBy = B  → <interaction actor="B" target="A" type="DamageOnCollide" />
+  A.isRemovedBy = B  → <interaction actor="B" target="A" attribute="isRemovedBy" />
+  A.growsBy = B      → <interaction actor="A" target="B" attribute="growsBy" />
+  A.shrinksBy = B    → <interaction actor="A" target="B" attribute="shrinksBy" />
+  A.stopsBy = B      → <interaction actor="B" target="A" attribute="stopsBy" />
+  A.isDamagedBy = B  → <interaction actor="B" target="A" attribute="isDamagedBy" />
 
 STEP 3 — DERIVE WIN/LOSE CONDITIONS
 Map recipeSelection.win_condition and lose_condition to XML using these rules:
@@ -523,7 +513,7 @@ Map recipeSelection.win_condition and lose_condition to XML using these rules:
 
 STEP 4 — DERIVE LAYOUT
 For each non-player entity with spawnRate > 0, emit one <spawn> element.
-zone: if the entity has HomingMovementComponent or FleeTargetComponent → "random"; otherwise → "top".
+zone: if isFleeing=true or chasedBy is not null → "random"; otherwise → "top".
 interval: compute as 1 / spawnRate, rounded to 1 decimal place, with unit "s".
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -542,14 +532,12 @@ XML SCHEMA (fill every placeholder — no comments in output):
 
   <entities>
     <entity name="{EntityName}" isPlayer="{true|false}" speed="{speed}" size="{size}" spawnRate="{spawnRate}">
-      <behavior>
-        <component type="{ComponentType}" />
-      </behavior>
+      <behavior isPlayer="{true|false}" isStatic="{true|false}" movesAnyWay="{true|false}" growsOverTime="{true|false}" shrinksOverTime="{true|false}" isFleeing="{true|false}" />
     </entity>
   </entities>
 
   <interactions>
-    <interaction actor="{EntityName}" target="{EntityName}" type="{InteractionType}" />
+    <interaction actor="{EntityName}" target="{EntityName}" attribute="{attributeName}" />
   </interactions>
 
   <win recipe="{win_recipe}" trigger="{trigger}" threshold="{value if applicable}" duration="{value if applicable}" entity="{entity}" />
