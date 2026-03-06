@@ -199,10 +199,10 @@ export default function Home() {
     >
       {/* Header */}
       <div style={{ marginBottom: 32 }}>
-        <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, color: "#1a1a2e" }}>
-          Game-O-Matic
+        <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, color: "white" }}>
+          Game-Authoring-Tool
         </h1>
-        <p style={{ margin: "6px 0 0", color: "#666", fontSize: 15 }}>
+        <p style={{ margin: "6px 0 0", color: "white", fontSize: 15 }}>
           Transform a concept map into a playable arcade game specification
         </p>
       </div>
@@ -212,12 +212,15 @@ export default function Home() {
         <section style={{ marginBottom: 24 }}>
           <label
             htmlFor="concept-input"
-            style={{ display: "block", fontWeight: 600, marginBottom: 8, fontSize: 14 }}
+            style={{ display: "block", fontWeight: 600, marginBottom: 8, fontSize: 14, color: "white" }}
           >
             Describe your concept map in plain language
           </label>
           <p style={{ margin: "0 0 10px", fontSize: 13, color: "#666" }}>
-            Example: "Police arrests Occupier. Occupier obstructs WallStreet. WallStreet grows Occupier."
+            Example: "Police arrests Occupier. Occupier obstructs WallStreet. WallStreet grows Occupier." 
+          </p>
+           <p style={{ margin: "0 0 10px", fontSize: 13, color: "#666" }}>
+            Example: "Lion eats deer. Deer runs everywhere. Trees stop deer" 
           </p>
           <textarea
             id="concept-input"
