@@ -20,131 +20,78 @@ export interface EntityAttribute {
 }
 
 export const ENTITY_ATTRIBUTES: EntityAttribute[] = [
-  // ── Intrinsic / movement attributes ──────────────────────────────────────
+  // ── Identity ────────────────────────────────────────────────────────────────
 
-  {
-    key: "isStatic",
-    type: "boolean",
-    description:
-      "True if the entity never moves; acts as an immovable obstacle or barrier.",
-    default: false,
-  },
   {
     key: "isPlayer",
     type: "boolean",
     description:
-      "True if this entity is controlled by the human player via keyboard/gamepad input.",
+      "True if this entity is controlled by the human player. Exactly one entity should have this set to true.",
     default: false,
   },
   {
-    key: "movesTowardPlayer",
+    key: "isStatic",
     type: "boolean",
     description:
-      "True if this entity actively homes in on / chases the player character.",
-    default: false,
-  },
-  {
-    key: "movesAwayFromPlayer",
-    type: "boolean",
-    description:
-      "True if this entity actively flees or runs away from the player character.",
-    default: false,
-  },
-  {
-    key: "wandersRandomly",
-    type: "boolean",
-    description:
-      "True if this entity moves in random, unpredictable directions with no fixed target.",
-    default: false,
-  },
-  {
-    key: "patrolsBackAndForth",
-    type: "boolean",
-    description:
-      "True if this entity moves back and forth along a fixed path or area.",
-    default: false,
-  },
-  {
-    key: "acceleratesOverTime",
-    type: "boolean",
-    description:
-      "True if this entity's movement speed increases progressively over time.",
+      "True if the entity never moves; acts as an immovable obstacle or barrier (maps to StaticObstacleComponent).",
     default: false,
   },
 
-  // ── Size / lifecycle attributes ───────────────────────────────────────────
+  // ── Movement ─────────────────────────────────────────────────────────────────
 
   {
-    key: "canGrow",
+    key: "movesAnyWay",
     type: "boolean",
     description:
-      "True if this entity can increase in size — either continuously over time or when it contacts another entity.",
-    default: false,
-  },
-  {
-    key: "canShrink",
-    type: "boolean",
-    description:
-      "True if this entity can decrease in size — either continuously over time or when it contacts another entity.",
-    default: false,
-  },
-  {
-    key: "canSpawn",
-    type: "boolean",
-    description:
-      "True if this entity periodically creates new copies (clones) of itself at a set interval.",
+      "True if the entity moves in any way — chasing, fleeing, wandering, patrolling, or player-controlled. Set to false only for fully static entities.",
     default: false,
   },
 
-  // ── Relational / collision attributes (value = entity name or null) ───────
+  // ── Size / lifecycle ─────────────────────────────────────────────────────────
+
+  {
+    key: "growsOverTime",
+    type: "boolean",
+    description:
+      "True if this entity continuously grows larger over time on its own, independent of collisions (maps to GrowOverTimeComponent).",
+    default: false,
+  },
+  {
+    key: "shrinksOverTime",
+    type: "boolean",
+    description:
+      "True if this entity continuously shrinks over time on its own, independent of collisions (maps to ShrinkOverTimeComponent).",
+    default: false,
+  },
+
+  // ── Relational / collision attributes (value = entity name or null) ──────────
 
   {
     key: "isRemovedBy",
     type: "entity",
     description:
-      "The name of the entity that causes this entity to be removed (destroyed) upon collision. Set to null if no entity removes it.",
+      "The name of the entity that causes this entity to be removed (destroyed) upon collision (maps to RemoveOnCollideComponent on the remover). Set to null if no entity removes it.",
     default: null,
   },
   {
-    key: "damagesOn",
+    key: "growsBy",
     type: "entity",
     description:
-      "The name of the entity that this entity deals damage to upon collision. Set to null if it does not damage anything.",
+      "The name of the entity that causes this entity to grow on collision (maps to GrowOnCollideComponent). Set to null if contact with nothing makes it grow.",
     default: null,
   },
   {
-    key: "scoresOn",
+    key: "shrinksBy",
     type: "entity",
     description:
-      "The name of the entity that this entity awards score to when they collide. Set to null if no score is awarded.",
+      "The name of the entity that causes this entity to shrink on collision (maps to ShrinkOnCollideComponent). Set to null if contact with nothing makes it shrink.",
     default: null,
   },
   {
-    key: "growsOnContactWith",
+    key: "stopsBy",
     type: "entity",
     description:
-      "The name of the entity that causes this entity to grow in size on collision. Set to null if contact with nothing makes it grow.",
-    default: null,
-  },
-  {
-    key: "shrinksOnContactWith",
-    type: "entity",
-    description:
-      "The name of the entity that causes this entity to shrink on collision. Set to null if contact with nothing makes it shrink.",
-    default: null,
-  },
-  {
-    key: "pushesOnContact",
-    type: "entity",
-    description:
-      "The name of the entity that this entity applies a knockback / repulsive force to on collision. Set to null if it pushes nothing.",
-    default: null,
-  },
-  {
-    key: "freezesOnContact",
-    type: "entity",
-    description:
-      "The name of the entity that this entity temporarily immobilizes (stops movement of) on collision. Set to null if it freezes nothing.",
+      "The name of the entity that temporarily freezes / halts this entity's movement on collision (maps to StopMovementOnCollideComponent). Set to null if nothing stops it.",
     default: null,
   },
 ];

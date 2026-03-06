@@ -147,15 +147,16 @@ async function runAgent3(state: GameState): Promise<GameState> {
     entryPoint: "entityAttributes",
   });
 
-  const humanMsg = `Original user concept: ${state.input}
+  const humanMsg = `Original user concept (the intended rhetorical meaning — use this as your primary semantic guide):
+"${state.input}"
 
-Concept graph (entities and relations):
+Concept graph (entities and relations extracted from the concept above):
 ${JSON.stringify(state.conceptGraph, null, 2)}
 
-Micro-rhetoric selections (components assigned to entity relations):
+Micro-rhetoric selections (the component assigned to each relation — these are your primary mechanical evidence):
 ${JSON.stringify(state.microRhetoricsSelection, null, 2)}
 
-Assign the correct attribute values for every entity listed above.`;
+Using the concept, concept graph, and micro-rhetoric selections together, assign the correct attribute values for every entity listed above. Only set an attribute to true or a non-null entity name when clearly supported by the micro-rhetoric selections or the concept graph relations.`;
 
   const finalState = await runGraph(graph, {
     messages: [human(humanMsg)],

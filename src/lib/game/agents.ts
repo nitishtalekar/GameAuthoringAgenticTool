@@ -85,40 +85,43 @@ export function buildEntityAttributeAgent(): NodeFunction {
   const attributeList = formatEntityAttributesForPrompt();
 
   const systemPrompt = `You are an entity attribute assignment agent for the Game-O-Matic system.
-Given a concept graph and micro-rhetoric selections, assign values for every predefined attribute to every entity.
+Given the original user concept, a concept graph, and micro-rhetoric selections, assign values for every predefined attribute to every entity.
 
-PREDEFINED ATTRIBUTES (assign all of these for every entity):
+PREDEFINED ATTRIBUTES (assign ALL of these for every entity — do not omit any key):
 ${attributeList}
 
-RULES:
-- Every entity must have an entry with ALL attributes listed above — do not omit any key.
-- boolean attributes: set to true or false only.
-- entity attributes: set to the name of another entity in the game (exactly as it appears in the entities list), or null if not applicable.
-- Use the micro-rhetoric selections to determine which attributes are true (e.g. HomingMovementComponent → movesTowardPlayer: true).
-- Use the concept graph relations to determine entity-ref attributes (e.g. if "Police removes Criminal" → Criminal.isRemovedBy = "Police").
-- Only set isPlayer: true for the entity that represents the human player. If unclear, pick the entity that the player would most naturally control.
+ASSIGNMENT RULES:
+1. Every entity must have an entry with ALL attributes above — omitting a key is invalid.
+2. boolean attributes: set to true or false only. Do not use strings or null.
+3. entity-ref attributes: set to the exact name of another entity as it appears in the entities list, or null if the relationship does not apply.
+4. Base your decisions PRIMARILY on the micro-rhetoric selections:
+   - GrowOverTimeComponent   → growsOverTime: true
+   - ShrinkOverTimeComponent → shrinksOverTime: true
+   - StaticObstacleComponent → isStatic: true, movesAnyWay: false
+   - Any movement component (HomingMovementComponent, FleeTargetComponent, RandomMovementComponent, PatrolBetweenPointsComponent, IncreaseSpeedOverTimeComponent) → movesAnyWay: true
+   - Player-controlled entity → isPlayer: true, movesAnyWay: true
+   - RemoveOnCollideComponent on subject S toward object O → O.isRemovedBy = "S"
+   - GrowOnCollideComponent on subject S toward object O  → S.growsBy = "O"
+   - ShrinkOnCollideComponent on subject S toward object O → S.shrinksBy = "O"
+   - StopMovementOnCollideComponent on subject S toward object O → O.stopsBy = "S"
+5. Use the concept graph relations as secondary evidence to confirm or resolve ambiguities in entity-ref attributes.
+6. Use the original user concept as the highest-level semantic guide — attributes must reflect the intended meaning of the concept, not just mechanical defaults.
+7. Exactly one entity should have isPlayer: true. If unclear, pick the entity the player would most naturally control.
+8. Do NOT set an attribute to true or a non-null entity ref unless it is clearly supported by a micro-rhetoric selection or the concept graph relation.
 
 OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no markdown fences, no extra text:
 {
   "entityAttributeState": {
     "EntityName": {
-      "isStatic": false,
       "isPlayer": false,
-      "movesTowardPlayer": false,
-      "movesAwayFromPlayer": false,
-      "wandersRandomly": false,
-      "patrolsBackAndForth": false,
-      "acceleratesOverTime": false,
-      "canGrow": false,
-      "canShrink": false,
-      "canSpawn": false,
+      "isStatic": false,
+      "movesAnyWay": false,
+      "growsOverTime": false,
+      "shrinksOverTime": false,
       "isRemovedBy": null,
-      "damagesOn": null,
-      "scoresOn": null,
-      "growsOnContactWith": null,
-      "shrinksOnContactWith": null,
-      "pushesOnContact": null,
-      "freezesOnContact": null
+      "growsBy": null,
+      "shrinksBy": null,
+      "stopsBy": null
     }
   }
 }`;
