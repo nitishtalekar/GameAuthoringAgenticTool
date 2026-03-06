@@ -133,7 +133,7 @@ export interface RhetoricCritique {
 
 // ---- Entity Attribute State (Agent 3 output) ----
 
-export type EntityAttributeValue = boolean | string | null;
+export type EntityAttributeValue = boolean | string | number | null;
 export type EntityAttributeMap = Record<string, EntityAttributeValue>;
 
 /**
@@ -151,7 +151,6 @@ export interface GameState {
   microRhetoricsSelection?: MicroRhetoricsSelection;
   entityAttributeState?: EntityAttributeState;
   recipeSelection?: RecipeSelection;
-  entities?: EntitySpec[];
   verifierReport?: VerifierReport;
   rhetoricCritique?: RhetoricCritique;
   rhetoricSwapApplied?: boolean;

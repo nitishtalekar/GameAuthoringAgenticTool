@@ -16,7 +16,6 @@ import type {
   StepRequest,
   StepResponse,
   GameState,
-  EntitySpec,
   EntityAttributeState,
   ConceptGraph,
   MicroRhetoricsSelection,
@@ -74,8 +73,8 @@ async function runStep(step: number, state: GameState): Promise<GameState> {
       return runAgent5(state);   // Verifier (was 4)
     case 6:
       return runAgent6(state);   // Rhetoric Critic (was 5)
-    case 65:
-      return runAgent6b(state);  // Rhetoric Swap + Re-Critique (was 55)
+    // case 65:
+    //   return runAgent6b(state);  // Rhetoric Swap + Re-Critique (was 55)
     case 7:
       return runAgent7(state);   // XML Generation (was 6)
     default:
@@ -209,9 +208,6 @@ async function runAgent5(state: GameState): Promise<GameState> {
     throw new Error("Agent 5 requires steps 1–4 to be completed first.");
   }
 
-  // Assembly step: build EntitySpec[] from prior structured outputs before calling LLM
-  const entities = assembleEntities(state.conceptGraph, state.microRhetoricsSelection, state.entityAttributeState);
-
   const agentNode = buildVerifierAgent();
   const graph = buildGraph({
     nodes: [{ name: "verifier", fn: agentNode }],
@@ -250,13 +246,9 @@ Verify playability and propose minimal repairs to the entity attribute state and
     verifierReport
   );
 
-  // Apply component-level repairs to entity list
-  const repairedEntities = applyRepairs(entities, verifierReport);
-
   return {
     ...state,
     step: 5,
-    entities: repairedEntities,
     entityAttributeState,
     recipeSelection,
     verifierReport,
@@ -264,7 +256,7 @@ Verify playability and propose minimal repairs to the entity attribute state and
 }
 
 async function runAgent6(state: GameState): Promise<GameState> {
-  if (!state.entities || !state.verifierReport) {
+  if (!state.entityAttributeState || !state.recipeSelection || !state.verifierReport) {
     throw new Error("Agent 6 requires steps 1–5 to be completed first.");
   }
 
@@ -280,10 +272,11 @@ async function runAgent6(state: GameState): Promise<GameState> {
 Original concept graph:
 ${JSON.stringify(state.conceptGraph, null, 2)}
 
-Final game mechanics (what the game actually simulates):
-Entities: ${JSON.stringify(state.entities, null, 2)}
-Recipes: ${JSON.stringify(state.recipeSelection, null, 2)}
-Verifier report: ${JSON.stringify(state.verifierReport, null, 2)}
+Entity attribute state (the game mechanics):
+${JSON.stringify(state.entityAttributeState, null, 2)}
+
+Recipe selection (win/lose conditions):
+${JSON.stringify(state.recipeSelection, null, 2)}
 
 Evaluate how well the game mechanics express the intended rhetorical meaning.`;
 
@@ -298,12 +291,13 @@ Evaluate how well the game mechanics express the intended rhetorical meaning.`;
   return { ...state, step: 6, rhetoricCritique };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function runAgent6b(state: GameState): Promise<GameState> {
-  if (!state.entities || !state.rhetoricCritique) {
+  if (!state.entityAttributeState || !state.rhetoricCritique) {
     throw new Error("Step 65 requires step 6 (rhetoric critique) to be completed first.");
   }
 
-  // Apply suggested swaps via swap agent
+  // Apply suggested attribute swaps to entityAttributeState via swap agent
   const swapNode = buildRhetoricSwapAgent();
   const swapGraph = buildGraph({
     nodes: [{ name: "swap", fn: swapNode }],
@@ -311,8 +305,11 @@ async function runAgent6b(state: GameState): Promise<GameState> {
     entryPoint: "swap",
   });
 
-  const swapMsg = `Current entities:
-${JSON.stringify(state.entities, null, 2)}
+  const swapMsg = `Current entity attribute state:
+${JSON.stringify(state.entityAttributeState, null, 2)}
+
+Micro-rhetoric selections:
+${JSON.stringify(state.microRhetoricsSelection, null, 2)}
 
 Suggested swaps from rhetoric critic:
 ${JSON.stringify(state.rhetoricCritique.suggested_swaps, null, 2)}
@@ -328,9 +325,11 @@ Apply these swaps and return the updated entities list.`;
     getLastMessageContent(swapResult.messages),
     "Agent 6b (Rhetoric Swap)"
   );
-  const swappedEntities: GameState["entities"] = swapOutput.entities ?? state.entities;
+  // Swap agent still returns an entities list; we keep it for the re-critique message but don't store it
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const swappedEntities: any[] = swapOutput.entities ?? [];
 
-  // Re-run rhetoric critique on updated entities
+  // Re-run rhetoric critique using entityAttributeState + recipeSelection
   const criticNode = buildRhetoricCriticAgent();
   const criticGraph = buildGraph({
     nodes: [{ name: "critic", fn: criticNode }],
@@ -343,10 +342,14 @@ Apply these swaps and return the updated entities list.`;
 Original concept graph:
 ${JSON.stringify(state.conceptGraph, null, 2)}
 
-Final game mechanics (what the game actually simulates):
-Entities: ${JSON.stringify(swappedEntities, null, 2)}
-Recipes: ${JSON.stringify(state.recipeSelection, null, 2)}
-Verifier report: ${JSON.stringify(state.verifierReport, null, 2)}
+Entity attribute state (the game mechanics after swaps):
+${JSON.stringify(state.entityAttributeState, null, 2)}
+
+Swapped component context:
+${JSON.stringify(swappedEntities, null, 2)}
+
+Recipe selection (win/lose conditions):
+${JSON.stringify(state.recipeSelection, null, 2)}
 
 Evaluate how well the game mechanics express the intended rhetorical meaning.`;
 
@@ -363,14 +366,13 @@ Evaluate how well the game mechanics express the intended rhetorical meaning.`;
   return {
     ...state,
     step: 6, // keep step at 6 so "Next — Step 7" button remains visible
-    entities: swappedEntities,
     rhetoricSwapApplied: true,
     postSwapRhetoricCritique,
   };
 }
 
 async function runAgent7(state: GameState): Promise<GameState> {
-  if (!state.entities || !state.recipeSelection) {
+  if (!state.entityAttributeState || !state.recipeSelection) {
     throw new Error("Agent 7 requires steps 1–6 to be completed first.");
   }
 
@@ -381,17 +383,15 @@ async function runAgent7(state: GameState): Promise<GameState> {
     entryPoint: "xmlGen",
   });
 
+  const critique = state.postSwapRhetoricCritique ?? state.rhetoricCritique;
+
   const humanMsg = `Original user concept: ${state.input}
 
-Full game specification to convert to XML:
+Entity attribute state (all entities and their mechanics):
+${JSON.stringify(state.entityAttributeState, null, 2)}
 
-Entities:
-${JSON.stringify(state.entities, null, 2)}
-
-Win recipe: ${state.recipeSelection.win_recipe}
-Lose recipe: ${state.recipeSelection.lose_recipe}
-Structure recipe: ${state.recipeSelection.structure_recipe}
-Patch recipes: ${JSON.stringify(state.recipeSelection.patch_recipes)}
+Recipe selection:
+${JSON.stringify(state.recipeSelection, null, 2)}
 
 Micro-rhetoric selections:
 ${JSON.stringify(state.microRhetoricsSelection?.selections, null, 2)}
@@ -400,8 +400,8 @@ Verifier repairs applied:
 ${JSON.stringify(state.verifierReport?.repairs, null, 2)}
 
 Rhetoric critique:
-Alignment score: ${(state.postSwapRhetoricCritique ?? state.rhetoricCritique)?.alignment_score ?? "N/A"}
-Interpretation: ${(state.postSwapRhetoricCritique ?? state.rhetoricCritique)?.interpretation ?? "N/A"}
+Alignment score: ${critique?.alignment_score ?? "N/A"}
+Interpretation: ${critique?.interpretation ?? "N/A"}
 
 Generate the complete XML game specification now.`;
 
@@ -421,38 +421,6 @@ Generate the complete XML game specification now.`;
   const xmlOutput = validateXml(cleaned) ? cleaned : serializeToXml(state);
 
   return { ...state, step: 7, xmlOutput };
-}
-
-// --- Pure helper: assemble EntitySpec[] from concept graph + micro-rhetoric selections + entity attribute state ---
-
-function assembleEntities(
-  conceptGraph: ConceptGraph,
-  microRhetoricsSelection: MicroRhetoricsSelection,
-  entityAttributeState: EntityAttributeState
-): EntitySpec[] {
-  return conceptGraph.entities.map((name, idx) => {
-    const relevantComponents = microRhetoricsSelection.selections
-      .filter((s) => {
-        const parts = s.relation.split(" ");
-        return parts[0] === name || parts[parts.length - 1] === name;
-      })
-      .map((s) => s.component);
-
-    const uniqueComponents = [...new Set(relevantComponents)];
-    const attrs = entityAttributeState[name] ?? {};
-    const isPlayer = attrs.isPlayer === true || idx === 0;
-
-    return {
-      name,
-      isPlayer,
-      components: uniqueComponents,
-      parameters: {
-        speed: 100,
-        size: 32,
-        spawnRate: 1.5,
-      },
-    };
-  });
 }
 
 // --- Pure helper: apply verifier repairs to entityAttributeState and recipeSelection ---
@@ -510,67 +478,6 @@ function applyVerifierRepairs(
   }
 
   return { entityAttributeState: updatedAttrs, recipeSelection: updatedRecipe };
-}
-
-// --- Pure helper: apply verifier repairs to entity list ---
-
-function applyRepairs(
-  entities: EntitySpec[],
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  verifierReport: any
-): EntitySpec[] {
-  if (!verifierReport?.repairs || verifierReport.repairs.length === 0) {
-    return entities;
-  }
-
-  return entities.map((entity) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const repairs = verifierReport.repairs.filter((r: any) => r.target === entity.name);
-    if (repairs.length === 0) return entity;
-
-    let updatedEntity = { ...entity, components: [...entity.components] };
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    for (const repair of repairs) {
-      switch (repair.operator) {
-        case "AddComponent":
-          if (repair.to && !updatedEntity.components.includes(repair.to)) {
-            updatedEntity.components.push(repair.to);
-          }
-          break;
-        case "RemoveComponent":
-          if (repair.from) {
-            updatedEntity.components = updatedEntity.components.filter(
-              (c) => c !== repair.from
-            );
-          }
-          break;
-        case "ReplaceComponent":
-          if (repair.from && repair.to) {
-            updatedEntity.components = updatedEntity.components.map((c) =>
-              c === repair.from ? repair.to : c
-            );
-            if (!updatedEntity.components.includes(repair.to)) {
-              updatedEntity.components.push(repair.to);
-            }
-          }
-          break;
-        case "AssignPlayer":
-          updatedEntity = { ...updatedEntity, isPlayer: true };
-          break;
-        case "AdjustParameter":
-          if (repair.parameter !== undefined && repair.value !== undefined) {
-            updatedEntity.parameters = {
-              ...updatedEntity.parameters,
-              [repair.parameter]: repair.value,
-            };
-          }
-          break;
-      }
-    }
-
-    return updatedEntity;
-  });
 }
 
 // --- Utility: safe JSON parse with descriptive error ---
