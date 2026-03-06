@@ -83,6 +83,17 @@ export interface RhetoricCritique {
   suggested_swaps: SuggestedSwap[];
 }
 
+// ---- Entity Attribute State (Agent 3 output) ----
+
+export type EntityAttributeValue = boolean | string | null;
+export type EntityAttributeMap = Record<string, EntityAttributeValue>;
+
+/**
+ * Keys are entity names. Values are maps of all predefined attributes.
+ * Empty object {} means the attribute agent has not run yet.
+ */
+export type EntityAttributeState = Record<string, EntityAttributeMap>;
+
 // ---- Top-level GameState (client-side accumulator) ----
 
 export interface GameState {
@@ -90,6 +101,7 @@ export interface GameState {
   input: string;
   conceptGraph?: ConceptGraph;
   microRhetoricsSelection?: MicroRhetoricsSelection;
+  entityAttributeState?: EntityAttributeState;
   recipeSelection?: RecipeSelection;
   entities?: EntitySpec[];
   verifierReport?: VerifierReport;

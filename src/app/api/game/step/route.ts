@@ -4,6 +4,7 @@ import { human, getLastMessageContent } from "@/utils/messages";
 import {
   buildAuthoringAgent,
   buildMicroRhetoricAgent,
+  buildEntityAttributeAgent,
   buildRecipeAgent,
   buildVerifierAgent,
   buildRhetoricCriticAgent,
@@ -16,6 +17,7 @@ import type {
   StepResponse,
   GameState,
   EntitySpec,
+  EntityAttributeState,
   ConceptGraph,
   MicroRhetoricsSelection,
 } from "@/lib/game/types";
@@ -37,9 +39,9 @@ export async function POST(req: NextRequest): Promise<NextResponse<StepResponse>
     const body = (await req.json()) as StepRequest;
     const { step, state } = body;
 
-    if (!step || step < 1 || (step > 6 && step !== 55)) {
+    if (!step || step < 1 || (step > 7 && step !== 65)) {
       return NextResponse.json(
-        { state, error: "Invalid step number. Must be between 1 and 6 (or 55 for rhetoric swap)." },
+        { state, error: "Invalid step number. Must be between 1 and 7 (or 65 for rhetoric swap)." },
         { status: 400 }
       );
     }
@@ -65,15 +67,17 @@ async function runStep(step: number, state: GameState): Promise<GameState> {
     case 2:
       return runAgent2(state);
     case 3:
-      return runAgent3(state);
+      return runAgent3(state);   // Entity Attribute Agent (new)
     case 4:
-      return runAgent4(state);
+      return runAgent4(state);   // Recipe Selection (was 3)
     case 5:
-      return runAgent5(state);
-    case 55:
-      return runAgent5b(state);
+      return runAgent5(state);   // Verifier (was 4)
     case 6:
-      return runAgent6(state);
+      return runAgent6(state);   // Rhetoric Critic (was 5)
+    case 65:
+      return runAgent6b(state);  // Rhetoric Swap + Re-Critique (was 55)
+    case 7:
+      return runAgent7(state);   // XML Generation (was 6)
     default:
       throw new Error(`Unhandled step: ${step}`);
   }
@@ -136,6 +140,38 @@ async function runAgent3(state: GameState): Promise<GameState> {
     throw new Error("Agent 3 requires conceptGraph and microRhetoricsSelection. Run steps 1–2 first.");
   }
 
+  const agentNode = buildEntityAttributeAgent();
+  const graph = buildGraph({
+    nodes: [{ name: "entityAttributes", fn: agentNode }],
+    edges: [{ from: "entityAttributes", to: "END" }],
+    entryPoint: "entityAttributes",
+  });
+
+  const humanMsg = `Original user concept: ${state.input}
+
+Concept graph (entities and relations):
+${JSON.stringify(state.conceptGraph, null, 2)}
+
+Micro-rhetoric selections (components assigned to entity relations):
+${JSON.stringify(state.microRhetoricsSelection, null, 2)}
+
+Assign the correct attribute values for every entity listed above.`;
+
+  const finalState = await runGraph(graph, {
+    messages: [human(humanMsg)],
+  });
+
+  const raw = getLastMessageContent(finalState.messages);
+  const parsed = parseJson<{ entityAttributeState: EntityAttributeState }>(raw, "Agent 3 (Entity Attributes)");
+
+  return { ...state, step: 3, entityAttributeState: parsed.entityAttributeState };
+}
+
+async function runAgent4(state: GameState): Promise<GameState> {
+  if (!state.conceptGraph || !state.microRhetoricsSelection) {
+    throw new Error("Agent 4 requires conceptGraph and microRhetoricsSelection. Run steps 1–3 first.");
+  }
+
   const agentNode = buildRecipeAgent();
   const graph = buildGraph({
     nodes: [{ name: "recipe", fn: agentNode }],
@@ -159,14 +195,14 @@ Select the most appropriate win, lose, structure, and patch recipes for this gam
 
   const raw = getLastMessageContent(finalState.messages);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const recipeSelection = parseJson<any>(raw, "Agent 3 (Recipe Selection)");
+  const recipeSelection = parseJson<any>(raw, "Agent 4 (Recipe Selection)");
 
-  return { ...state, step: 3, recipeSelection };
+  return { ...state, step: 4, recipeSelection };
 }
 
-async function runAgent4(state: GameState): Promise<GameState> {
+async function runAgent5(state: GameState): Promise<GameState> {
   if (!state.conceptGraph || !state.microRhetoricsSelection || !state.recipeSelection) {
-    throw new Error("Agent 4 requires steps 1–3 to be completed first.");
+    throw new Error("Agent 5 requires steps 1–4 to be completed first.");
   }
 
   // Assembly step: build EntitySpec[] from prior structured outputs before calling LLM
@@ -197,17 +233,17 @@ Analyze this specification for playability issues and propose minimal repairs if
 
   const raw = getLastMessageContent(finalState.messages);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const verifierReport = parseJson<any>(raw, "Agent 4 (Verifier)");
+  const verifierReport = parseJson<any>(raw, "Agent 5 (Verifier)");
 
-  // Apply AssignPlayer repairs to entity list
+  // Apply repairs to entity list
   const repairedEntities = applyRepairs(entities, verifierReport);
 
-  return { ...state, step: 4, entities: repairedEntities, verifierReport };
+  return { ...state, step: 5, entities: repairedEntities, verifierReport };
 }
 
-async function runAgent5(state: GameState): Promise<GameState> {
+async function runAgent6(state: GameState): Promise<GameState> {
   if (!state.entities || !state.verifierReport) {
-    throw new Error("Agent 5 requires steps 1–4 to be completed first.");
+    throw new Error("Agent 6 requires steps 1–5 to be completed first.");
   }
 
   const agentNode = buildRhetoricCriticAgent();
@@ -235,14 +271,14 @@ Evaluate how well the game mechanics express the intended rhetorical meaning.`;
 
   const raw = getLastMessageContent(finalState.messages);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rhetoricCritique = parseJson<any>(raw, "Agent 5 (Rhetoric Critic)");
+  const rhetoricCritique = parseJson<any>(raw, "Agent 6 (Rhetoric Critic)");
 
-  return { ...state, step: 5, rhetoricCritique };
+  return { ...state, step: 6, rhetoricCritique };
 }
 
-async function runAgent5b(state: GameState): Promise<GameState> {
+async function runAgent6b(state: GameState): Promise<GameState> {
   if (!state.entities || !state.rhetoricCritique) {
-    throw new Error("Step 5.5 requires step 5 (rhetoric critique) to be completed first.");
+    throw new Error("Step 65 requires step 6 (rhetoric critique) to be completed first.");
   }
 
   // Apply suggested swaps via swap agent
@@ -268,7 +304,7 @@ Apply these swaps and return the updated entities list.`;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const swapOutput = parseJson<any>(
     getLastMessageContent(swapResult.messages),
-    "Agent 5b (Rhetoric Swap)"
+    "Agent 6b (Rhetoric Swap)"
   );
   const swappedEntities: GameState["entities"] = swapOutput.entities ?? state.entities;
 
@@ -299,21 +335,21 @@ Evaluate how well the game mechanics express the intended rhetorical meaning.`;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const postSwapRhetoricCritique = parseJson<any>(
     getLastMessageContent(criticResult.messages),
-    "Agent 5c (Post-Swap Rhetoric Critic)"
+    "Agent 6c (Post-Swap Rhetoric Critic)"
   );
 
   return {
     ...state,
-    step: 5, // keep step at 5 so "Next — Step 6" button remains visible
+    step: 6, // keep step at 6 so "Next — Step 7" button remains visible
     entities: swappedEntities,
     rhetoricSwapApplied: true,
     postSwapRhetoricCritique,
   };
 }
 
-async function runAgent6(state: GameState): Promise<GameState> {
+async function runAgent7(state: GameState): Promise<GameState> {
   if (!state.entities || !state.recipeSelection) {
-    throw new Error("Agent 6 requires steps 1–5 to be completed first.");
+    throw new Error("Agent 7 requires steps 1–6 to be completed first.");
   }
 
   const agentNode = buildXmlGenerationAgent();
@@ -362,7 +398,7 @@ Generate the complete XML game specification now.`;
 
   const xmlOutput = validateXml(cleaned) ? cleaned : serializeToXml(state);
 
-  return { ...state, step: 6, xmlOutput };
+  return { ...state, step: 7, xmlOutput };
 }
 
 // --- Pure helper: assemble EntitySpec[] from concept graph + micro-rhetoric selections ---

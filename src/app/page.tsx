@@ -15,24 +15,28 @@ const STEP_LABELS: Record<number, { title: string; description: string }> = {
     description: "Mapping each verb relationship to a gameplay mechanic",
   },
   3: {
+    title: "Entity Attribute State",
+    description: "Assigning semantic attributes to each entity",
+  },
+  4: {
     title: "Recipe Selection",
     description: "Choosing win condition, lose condition, and layout structure",
   },
-  4: {
+  5: {
     title: "Verification & Repair",
     description: "Checking playability and applying fixes if needed",
   },
-  5: {
+  6: {
     title: "Rhetoric Critique",
     description: "Evaluating whether mechanics express your intended meaning",
   },
-  6: {
+  7: {
     title: "XML Generation",
     description: "Generating the final game engine specification",
   },
 };
 
-const TOTAL_STEPS = 6;
+const TOTAL_STEPS = 7;
 
 // --- StepCard: collapsible result display ---
 
@@ -248,7 +252,7 @@ export default function Home() {
               cursor: inputText.trim() && !isLoading ? "pointer" : "not-allowed",
             }}
           >
-            {isLoading ? "Running Step 1..." : "Start — Step 1 of 6: Authoring"}
+            {isLoading ? "Running Step 1..." : "Start — Step 1 of 7: Authoring"}
           </button>
         </section>
       )}
@@ -347,32 +351,40 @@ export default function Home() {
             isLatest={currentStep === 2 && !isLoading}
           />
         )}
-        {gameState.recipeSelection && (
+        {gameState.entityAttributeState && (
           <StepCard
             stepNumber={3}
+            title="Entity Attribute State"
+            data={gameState.entityAttributeState}
+            isLatest={currentStep === 3 && !isLoading}
+          />
+        )}
+        {gameState.recipeSelection && (
+          <StepCard
+            stepNumber={4}
             title="Recipe Selection"
             data={gameState.recipeSelection}
-            isLatest={currentStep === 3 && !isLoading}
+            isLatest={currentStep === 4 && !isLoading}
           />
         )}
         {gameState.verifierReport && (
           <StepCard
-            stepNumber={4}
+            stepNumber={5}
             title="Verification & Repair"
             data={gameState.verifierReport}
-            isLatest={currentStep === 4 && !isLoading}
+            isLatest={currentStep === 5 && !isLoading}
           />
         )}
         {gameState.rhetoricCritique && (
           <StepCard
-            stepNumber={5}
+            stepNumber={6}
             title="Rhetoric Critique"
             data={gameState.rhetoricCritique}
-            isLatest={currentStep === 5 && !isLoading && !gameState.postSwapRhetoricCritique}
+            isLatest={currentStep === 6 && !isLoading && !gameState.postSwapRhetoricCritique}
           />
         )}
 
-        {/* Step 5.5 — swap button (shown when alignment < 1 and swap not yet applied) */}
+        {/* Step 6.5 — swap button (shown when alignment < 1 and swap not yet applied) */}
         {gameState.rhetoricCritique &&
           gameState.rhetoricCritique.alignment_score < 1 &&
           !gameState.rhetoricSwapApplied && (
@@ -392,7 +404,7 @@ export default function Home() {
                 suggested to improve rhetorical alignment.
               </p>
               <button
-                onClick={() => advanceStep(55, gameState)}
+                onClick={() => advanceStep(65, gameState)}
                 disabled={isLoading}
                 style={{
                   padding: "8px 16px",
@@ -410,10 +422,10 @@ export default function Home() {
             </div>
           )}
 
-        {/* Step 5.5 — post-swap critique result */}
+        {/* Step 6.5 — post-swap critique result */}
         {gameState.postSwapRhetoricCritique && (
           <StepCard
-            stepNumber={5.5}
+            stepNumber={6.5}
             title="Rhetoric Swap & Re-Critique"
             data={gameState.postSwapRhetoricCritique}
             isLatest={!isLoading && !gameState.xmlOutput}
@@ -460,7 +472,7 @@ export default function Home() {
                   flexShrink: 0,
                 }}
               >
-                6
+                7
               </span>
               XML Game Specification — Final Output
             </summary>

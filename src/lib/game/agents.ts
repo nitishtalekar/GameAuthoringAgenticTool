@@ -3,6 +3,7 @@ import { buildAgentNode } from "@/lib/agent";
 import type { NodeFunction } from "@/lib/types";
 import { formatMicroRhetoricsForPrompt } from "@/data/micro-rhetorics";
 import { formatRecipesForPrompt } from "@/data/recipes";
+import { formatEntityAttributesForPrompt } from "@/data/entity-attributes";
 
 /**
  * Agent 1 — Authoring Agent
@@ -73,7 +74,60 @@ OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no
 }
 
 /**
- * Agent 3 — Recipe Selection Agent
+ * Agent 3 — Entity Attribute Agent
+ *
+ * Reads the concept graph and micro-rhetoric selections, then assigns
+ * values for every predefined attribute to every entity in the game.
+ * Produces the EntityAttributeState used by downstream agents.
+ */
+export function buildEntityAttributeAgent(): NodeFunction {
+  const llm = createOpenAIModel({ temperature: 0.2 });
+  const attributeList = formatEntityAttributesForPrompt();
+
+  const systemPrompt = `You are an entity attribute assignment agent for the Game-O-Matic system.
+Given a concept graph and micro-rhetoric selections, assign values for every predefined attribute to every entity.
+
+PREDEFINED ATTRIBUTES (assign all of these for every entity):
+${attributeList}
+
+RULES:
+- Every entity must have an entry with ALL attributes listed above — do not omit any key.
+- boolean attributes: set to true or false only.
+- entity attributes: set to the name of another entity in the game (exactly as it appears in the entities list), or null if not applicable.
+- Use the micro-rhetoric selections to determine which attributes are true (e.g. HomingMovementComponent → movesTowardPlayer: true).
+- Use the concept graph relations to determine entity-ref attributes (e.g. if "Police removes Criminal" → Criminal.isRemovedBy = "Police").
+- Only set isPlayer: true for the entity that represents the human player. If unclear, pick the entity that the player would most naturally control.
+
+OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no markdown fences, no extra text:
+{
+  "entityAttributeState": {
+    "EntityName": {
+      "isStatic": false,
+      "isPlayer": false,
+      "movesTowardPlayer": false,
+      "movesAwayFromPlayer": false,
+      "wandersRandomly": false,
+      "patrolsBackAndForth": false,
+      "acceleratesOverTime": false,
+      "canGrow": false,
+      "canShrink": false,
+      "canSpawn": false,
+      "isRemovedBy": null,
+      "damagesOn": null,
+      "scoresOn": null,
+      "growsOnContactWith": null,
+      "shrinksOnContactWith": null,
+      "pushesOnContact": null,
+      "freezesOnContact": null
+    }
+  }
+}`;
+
+  return buildAgentNode(llm, { systemPrompt });
+}
+
+/**
+ * Agent 4 — Recipe Selection Agent
  *
  * Selects win, lose, structure, and patch recipes based on the current
  * entity and component state.
