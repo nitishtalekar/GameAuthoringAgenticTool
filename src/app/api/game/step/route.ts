@@ -188,6 +188,9 @@ ${JSON.stringify(state.conceptGraph, null, 2)}
 Micro-rhetoric selections (entity components assigned so far):
 ${JSON.stringify(state.microRhetoricsSelection, null, 2)}
 
+Entity attribute state (use this to derive win_condition and lose_condition):
+${JSON.stringify(state.entityAttributeState, null, 2)}
+
 Select the most appropriate win, lose, structure, and patch recipes for this game.`;
 
   const finalState = await runGraph(graph, {

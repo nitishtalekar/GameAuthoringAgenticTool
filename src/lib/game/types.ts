@@ -27,11 +27,29 @@ export interface MicroRhetoricsSelection {
 
 // ---- Recipe Selection (Agent 3 output) ----
 
+export interface WinLoseCondition {
+  /** Natural-language constraint, e.g. "All Asteroid isRemovedBy Player" */
+  description: string;
+  /** The entity whose state is observed, e.g. "Asteroid" */
+  entity: string;
+  /** The attribute being checked, e.g. "isRemovedBy" */
+  attribute: string;
+  /**
+   * The value that satisfies the condition.
+   * - Entity-ref attribute: exact entity name, e.g. "Player"
+   * - Boolean with measurable threshold: numeric string with unit, e.g. "256px" or "60s"
+   * - Plain boolean: "true" or "false"
+   */
+  value: string;
+}
+
 export interface RecipeSelection {
   win_recipe: string;
   lose_recipe: string;
   structure_recipe: string;
   patch_recipes: string[];
+  win_condition: WinLoseCondition;
+  lose_condition: WinLoseCondition;
   justifications: Record<string, string>;
 }
 

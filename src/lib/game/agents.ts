@@ -147,9 +147,14 @@ export function buildRecipeAgent(): NodeFunction {
   const loseRecipes = formatRecipesForPrompt("lose");
   const structureRecipes = formatRecipesForPrompt("structure");
   const patchRecipes = formatRecipesForPrompt("patch");
+  const attributeList = formatEntityAttributesForPrompt();
 
   const systemPrompt = `You are a recipe selection agent for the Game-O-Matic system.
-Given the entity and component state, select one win recipe, one lose recipe, one structure recipe, and any relevant patch recipes.
+Given the entity attribute state, select one win recipe, one lose recipe, one structure recipe, and any relevant patch recipes.
+Then produce a concrete win_condition and lose_condition that reference the actual entities and attributes from the entity attribute state.
+
+ENTITY ATTRIBUTE REFERENCE (all possible attributes and their meanings):
+${attributeList}
 
 WIN RECIPES:
 ${winRecipes}
@@ -168,6 +173,25 @@ RULES:
 - Select zero or more patch_recipes (use an empty array if none needed)
 - All selected names must come from the lists above exactly as written
 - Choose recipes that match the mechanics that are already present in the entity components
+
+WIN_CONDITION AND LOSE_CONDITION RULES:
+- Both must be derived directly from the entityAttributeState passed in the user message
+- entity: must be an exact entity name from the entityAttributeState
+- attribute: must be an exact attribute key from the entity attribute reference above (e.g. "isRemovedBy", "isDamagedBy", "growsBy", "growsOverTime", "shrinksOverTime")
+- value: depends on the attribute type —
+    • entity-ref attributes (isRemovedBy, growsBy, shrinksBy, stopsBy, isDamagedBy, chasedBy): use the referenced entity name (e.g. "Player")
+    • boolean attributes that imply a measurable threshold (growsOverTime, shrinksOverTime): use a numeric threshold string with unit suffix — size in pixels (e.g. "256px") for grow/shrink, seconds (e.g. "60s") for time-based
+    • boolean attributes with no natural threshold (movesAnyWay, isPlayer, isFleeing): use "true" or "false"
+- description: a plain-English constraint string (e.g. "All Asteroid isRemovedBy Player", "Blob growsOverTime reaches 256px", "Player survives for 60s")
+- Recipe-to-condition mapping:
+    • "Eliminate All Of Type" (win): entity = type being eliminated, attribute = "isRemovedBy", value = removing entity name
+    • "Grow Beyond Size" (win): entity = the growing entity, attribute = "growsOverTime" or "growsBy", value = size threshold in pixels (e.g. "256px")
+    • "Survive Duration" (win): entity = player entity, attribute = "movesAnyWay", value = duration in seconds (e.g. "60s")
+    • "Reach Goal Zone" (win): entity = player entity, attribute = "movesAnyWay", value = "true"
+    • "Score Threshold Win" (win): entity = the entity being collected/removed for score, attribute = "isRemovedBy", value = player entity name
+    • "Run Out Of Time" (lose): entity = player entity, attribute = "movesAnyWay", value = timer duration in seconds (e.g. "30s")
+    • "Health Depletion" (lose): entity = player entity, attribute = "isDamagedBy", value = the damaging entity name
+    • "Protected Entity Removed" (lose): entity = the protected entity, attribute = "isRemovedBy", value = the entity that removes it
 
 CRITICAL — WIN AND LOSE CONDITIONS MUST BE MUTUALLY EXCLUSIVE:
 The win and lose conditions must describe opposite, non-contradictory outcomes for the same game state.
@@ -191,6 +215,18 @@ OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no
   "lose_recipe": "recipe name",
   "structure_recipe": "recipe name",
   "patch_recipes": ["recipe name"],
+  "win_condition": {
+    "description": "All Asteroid isRemovedBy Player",
+    "entity": "Asteroid",
+    "attribute": "isRemovedBy",
+    "value": "Player"
+  },
+  "lose_condition": {
+    "description": "Player survives for 60s",
+    "entity": "Player",
+    "attribute": "movesAnyWay",
+    "value": "60s"
+  },
   "justifications": {
     "win": "one sentence explaining which mechanic/entity triggers the win",
     "lose": "one sentence explaining which mechanic/entity triggers the lose — must NOT reference the same entity or event as the win justification",
