@@ -61,6 +61,10 @@ export interface ComponentBehavior {
   pushesPlayerOnContact: boolean;
   /** Player velocity is zeroed for 1.2 s on overlap. */
   freezesPlayerOnContact: boolean;
+  /** This entity's velocity is zeroed for 1.2 s when it overlaps the player. */
+  freezesSelfOnContact: boolean;
+  /** This entity loses 1 HP on overlap with the player; destroyed at 0 HP. */
+  damagesEntityOnContact: boolean;
 }
 
 // ── Component registry ───────────────────────────────────────────────────────
@@ -76,7 +80,8 @@ export const COMPONENT_BEHAVIORS: Record<string, ComponentBehavior> = {
     wandersRandomly: true, patrolsBackAndForth: false,
     acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
     removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false,
+    freezesPlayerOnContact: false, freezesSelfOnContact: false, damagesEntityOnContact: false,
   },
 
   PatrolBetweenPointsComponent: {
@@ -86,7 +91,8 @@ export const COMPONENT_BEHAVIORS: Record<string, ComponentBehavior> = {
     wandersRandomly: false, patrolsBackAndForth: true,
     acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
     removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false,
+    freezesPlayerOnContact: false, freezesSelfOnContact: false, damagesEntityOnContact: false,
   },
 
   HomingMovementComponent: {
@@ -96,7 +102,8 @@ export const COMPONENT_BEHAVIORS: Record<string, ComponentBehavior> = {
     wandersRandomly: false, patrolsBackAndForth: false,
     acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
     removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false,
+    freezesPlayerOnContact: false, freezesSelfOnContact: false, damagesEntityOnContact: false,
   },
 
   FleeTargetComponent: {
@@ -106,7 +113,8 @@ export const COMPONENT_BEHAVIORS: Record<string, ComponentBehavior> = {
     wandersRandomly: false, patrolsBackAndForth: false,
     acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
     removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false,
+    freezesPlayerOnContact: false, freezesSelfOnContact: false, damagesEntityOnContact: false,
   },
 
   GrowOverTimeComponent: {
@@ -116,7 +124,8 @@ export const COMPONENT_BEHAVIORS: Record<string, ComponentBehavior> = {
     wandersRandomly: false, patrolsBackAndForth: false,
     acceleratesOverTime: false, growsOverTime: true, shrinksOverTime: false, spawnsOnInterval: false,
     removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false,
+    freezesPlayerOnContact: false, freezesSelfOnContact: false, damagesEntityOnContact: false,
   },
 
   ShrinkOverTimeComponent: {
@@ -126,7 +135,8 @@ export const COMPONENT_BEHAVIORS: Record<string, ComponentBehavior> = {
     wandersRandomly: false, patrolsBackAndForth: false,
     acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: true, spawnsOnInterval: false,
     removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false,
+    freezesPlayerOnContact: false, freezesSelfOnContact: false, damagesEntityOnContact: false,
   },
 
   IncreaseSpeedOverTimeComponent: {
@@ -136,7 +146,8 @@ export const COMPONENT_BEHAVIORS: Record<string, ComponentBehavior> = {
     wandersRandomly: false, patrolsBackAndForth: false,
     acceleratesOverTime: true, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
     removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false,
+    freezesPlayerOnContact: false, freezesSelfOnContact: false, damagesEntityOnContact: false,
   },
 
   SpawnPeriodicallyComponent: {
@@ -146,7 +157,8 @@ export const COMPONENT_BEHAVIORS: Record<string, ComponentBehavior> = {
     wandersRandomly: false, patrolsBackAndForth: false,
     acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: true,
     removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false,
+    freezesPlayerOnContact: false, freezesSelfOnContact: false, damagesEntityOnContact: false,
   },
 
   StaticObstacleComponent: {
@@ -156,7 +168,8 @@ export const COMPONENT_BEHAVIORS: Record<string, ComponentBehavior> = {
     wandersRandomly: false, patrolsBackAndForth: false,
     acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
     removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false,
+    freezesPlayerOnContact: false, freezesSelfOnContact: false, damagesEntityOnContact: false,
   },
 
   // ── Relational: placed in <relations> only, NEVER in <entity><components> ──
@@ -168,7 +181,8 @@ export const COMPONENT_BEHAVIORS: Record<string, ComponentBehavior> = {
     wandersRandomly: false, patrolsBackAndForth: false,
     acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
     removeOnContact: true, damagesPlayer: false, scoreOnContact: true,
-    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false,
+    freezesPlayerOnContact: false, freezesSelfOnContact: false, damagesEntityOnContact: false,
   },
 
   DamageOnCollideComponent: {
@@ -178,7 +192,8 @@ export const COMPONENT_BEHAVIORS: Record<string, ComponentBehavior> = {
     wandersRandomly: false, patrolsBackAndForth: false,
     acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
     removeOnContact: false, damagesPlayer: true, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false,
+    freezesPlayerOnContact: false, freezesSelfOnContact: false, damagesEntityOnContact: false,
   },
 
   RemoveOnCollideComponent: {
@@ -188,7 +203,8 @@ export const COMPONENT_BEHAVIORS: Record<string, ComponentBehavior> = {
     wandersRandomly: false, patrolsBackAndForth: false,
     acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
     removeOnContact: true, damagesPlayer: true, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false,
+    freezesPlayerOnContact: false, freezesSelfOnContact: false, damagesEntityOnContact: false,
   },
 
   GrowOnCollideComponent: {
@@ -198,7 +214,8 @@ export const COMPONENT_BEHAVIORS: Record<string, ComponentBehavior> = {
     wandersRandomly: false, patrolsBackAndForth: false,
     acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
     removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
-    growsOnContact: true, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
+    growsOnContact: true, shrinksPlayerOnContact: false, pushesPlayerOnContact: false,
+    freezesPlayerOnContact: false, freezesSelfOnContact: false, damagesEntityOnContact: false,
   },
 
   ShrinkOnCollideComponent: {
@@ -208,7 +225,8 @@ export const COMPONENT_BEHAVIORS: Record<string, ComponentBehavior> = {
     wandersRandomly: false, patrolsBackAndForth: false,
     acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
     removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: true, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
+    growsOnContact: false, shrinksPlayerOnContact: true, pushesPlayerOnContact: false,
+    freezesPlayerOnContact: false, freezesSelfOnContact: false, damagesEntityOnContact: false,
   },
 
   SpawnEntityOnRemoveComponent: {
@@ -218,7 +236,8 @@ export const COMPONENT_BEHAVIORS: Record<string, ComponentBehavior> = {
     wandersRandomly: false, patrolsBackAndForth: false,
     acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
     removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false,
+    freezesPlayerOnContact: false, freezesSelfOnContact: false, damagesEntityOnContact: false,
   },
 
   ApplyForceOnCollideComponent: {
@@ -228,7 +247,8 @@ export const COMPONENT_BEHAVIORS: Record<string, ComponentBehavior> = {
     wandersRandomly: false, patrolsBackAndForth: false,
     acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
     removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: true, freezesPlayerOnContact: false,
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: true,
+    freezesPlayerOnContact: false, freezesSelfOnContact: false, damagesEntityOnContact: false,
   },
 
   StopMovementOnCollideComponent: {
@@ -238,7 +258,8 @@ export const COMPONENT_BEHAVIORS: Record<string, ComponentBehavior> = {
     wandersRandomly: false, patrolsBackAndForth: false,
     acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
     removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: true,
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false,
+    freezesPlayerOnContact: true, freezesSelfOnContact: false, damagesEntityOnContact: false,
   },
 
   TransformTargetIntoSelfComponent: {
@@ -248,7 +269,32 @@ export const COMPONENT_BEHAVIORS: Record<string, ComponentBehavior> = {
     wandersRandomly: false, patrolsBackAndForth: false,
     acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
     removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
-    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false,
+    freezesPlayerOnContact: false, freezesSelfOnContact: false, damagesEntityOnContact: false,
+  },
+
+  // ── New: entity-perspective collision components ───────────────────────────
+
+  FreezeOnCollideComponent: {
+    placement: "relation", color: 0x00cec9,
+    description: "On player overlap: this entity's velocity is zeroed for 1.2 s (entity is stopped, not the player)",
+    isStatic: false, movesTowardPlayer: false, movesAwayFromPlayer: false,
+    wandersRandomly: false, patrolsBackAndForth: false,
+    acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
+    removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false,
+    freezesPlayerOnContact: false, freezesSelfOnContact: true, damagesEntityOnContact: false,
+  },
+
+  EntityDamageOnCollideComponent: {
+    placement: "relation", color: 0xd63031,
+    description: "On player overlap: this entity loses 1 HP; destroyed at 0 HP",
+    isStatic: false, movesTowardPlayer: false, movesAwayFromPlayer: false,
+    wandersRandomly: false, patrolsBackAndForth: false,
+    acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
+    removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
+    growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false,
+    freezesPlayerOnContact: false, freezesSelfOnContact: false, damagesEntityOnContact: true,
   },
 };
 
@@ -261,7 +307,8 @@ const PASSIVE_BEHAVIOR: ComponentBehavior = {
   wandersRandomly: false, patrolsBackAndForth: false,
   acceleratesOverTime: false, growsOverTime: false, shrinksOverTime: false, spawnsOnInterval: false,
   removeOnContact: false, damagesPlayer: false, scoreOnContact: false,
-  growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false, freezesPlayerOnContact: false,
+  growsOnContact: false, shrinksPlayerOnContact: false, pushesPlayerOnContact: false,
+  freezesPlayerOnContact: false, freezesSelfOnContact: false, damagesEntityOnContact: false,
 };
 
 // ── Lookup ───────────────────────────────────────────────────────────────────
@@ -283,6 +330,8 @@ const PRIORITY_ORDER: string[] = [
   "RemoveOnCollideComponent",
   "TransformTargetIntoSelfComponent",
   "GrowOnCollideComponent",
+  "FreezeOnCollideComponent",
+  "EntityDamageOnCollideComponent",
   "FleeTargetComponent",
   "RandomMovementComponent",
   "PatrolBetweenPointsComponent",
@@ -334,6 +383,8 @@ export function mergeBehaviors(componentTypes: string[]): ComponentBehavior {
     shrinksPlayerOnContact: behaviors.some((b) => b.shrinksPlayerOnContact),
     pushesPlayerOnContact:  behaviors.some((b) => b.pushesPlayerOnContact),
     freezesPlayerOnContact: behaviors.some((b) => b.freezesPlayerOnContact),
+    freezesSelfOnContact:   behaviors.some((b) => b.freezesSelfOnContact),
+    damagesEntityOnContact: behaviors.some((b) => b.damagesEntityOnContact),
   };
 }
 
