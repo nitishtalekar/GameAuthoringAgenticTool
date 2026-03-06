@@ -104,6 +104,9 @@ ASSIGNMENT RULES:
    - GrowOnCollideComponent on subject S toward object O  → S.growsBy = "O"
    - ShrinkOnCollideComponent on subject S toward object O → S.shrinksBy = "O"
    - StopMovementOnCollideComponent on subject S toward object O → O.stopsBy = "S"
+   - DamageOnCollideComponent on subject S toward object O → O.isDamagedBy = "S"
+   - HomingMovementComponent on subject S targeting object O → O.chasedBy = "S"
+   - FleeTargetComponent on subject S → S.isFleeing = true
 5. Use the concept graph relations as secondary evidence to confirm or resolve ambiguities in entity-ref attributes.
 6. Use the original user concept as the highest-level semantic guide — attributes must reflect the intended meaning of the concept, not just mechanical defaults.
 7. Exactly one entity should have isPlayer: true. If unclear, pick the entity the player would most naturally control.
@@ -121,7 +124,10 @@ OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no
       "isRemovedBy": null,
       "growsBy": null,
       "shrinksBy": null,
-      "stopsBy": null
+      "stopsBy": null,
+      "isDamagedBy": null,
+      "chasedBy": null,
+      "isFleeing": false
     }
   }
 }`;

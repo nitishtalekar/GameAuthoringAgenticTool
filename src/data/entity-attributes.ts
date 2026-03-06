@@ -94,6 +94,27 @@ export const ENTITY_ATTRIBUTES: EntityAttribute[] = [
       "The name of the entity that temporarily freezes / halts this entity's movement on collision (maps to StopMovementOnCollideComponent). Set to null if nothing stops it.",
     default: null,
   },
+  {
+    key: "isDamagedBy",
+    type: "entity",
+    description:
+      "The name of the entity that deals damage to this entity on collision (maps to DamageOnCollideComponent on the damager). Set to null if nothing damages it.",
+    default: null,
+  },
+  {
+    key: "chasedBy",
+    type: "entity",
+    description:
+      "The name of the entity that actively homes in on and pursues this entity (maps to HomingMovementComponent on the chaser). Set to null if nothing chases it.",
+    default: null,
+  },
+  {
+    key: "isFleeing",
+    type: "boolean",
+    description:
+      "True if this entity moves away from the player or a threat (maps to FleeTargetComponent).",
+    default: false,
+  },
 ];
 
 // ── Formatting helper for LLM prompts ────────────────────────────────────────
