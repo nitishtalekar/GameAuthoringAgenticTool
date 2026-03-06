@@ -68,22 +68,52 @@ export type RepairOperator =
   | "AddComponent"
   | "RemoveComponent"
   | "ReplaceComponent"
+  | "AlterAttribute"
   | "AdjustParameter"
   | "AssignPlayer";
 
 export interface RepairAction {
   operator: RepairOperator;
   target: string;
+  /** For component operations: old component name */
   from?: string;
+  /** For component operations: new component name */
   to?: string;
+  /** For AlterAttribute: the attribute key to change */
+  attribute?: string;
+  /** For AlterAttribute: the new attribute value */
+  attributeValue?: string | boolean | null;
+  /** For AdjustParameter: the parameter name */
+  parameter?: string;
+  /** For AdjustParameter: the new parameter value */
+  value?: string | number;
+  /** For win/lose condition repairs: "win_condition" | "lose_condition" */
+  conditionField?: "win_condition" | "lose_condition";
+  /** For win/lose condition repairs: the updated condition object */
+  conditionValue?: Record<string, string>;
+}
+
+export interface VerifierSuggestion {
+  operator: RepairOperator;
+  target: string;
+  description: string;
+  /** For AlterAttribute */
+  attribute?: string;
+  attributeValue?: string | boolean | null;
+  /** For AdjustParameter */
   parameter?: string;
   value?: string | number;
+  /** For component ops */
+  from?: string;
+  to?: string;
 }
 
 export interface VerifierReport {
+  isPlayable: boolean;
   issues: string[];
+  suggestions: VerifierSuggestion[];
+  repairsSummary: string;
   repairs: RepairAction[];
-  playable: boolean;
 }
 
 // ---- Rhetoric Critique (Agent 5 output) ----

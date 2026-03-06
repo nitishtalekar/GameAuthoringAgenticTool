@@ -205,12 +205,12 @@ Select the most appropriate win, lose, structure, and patch recipes for this gam
 }
 
 async function runAgent5(state: GameState): Promise<GameState> {
-  if (!state.conceptGraph || !state.microRhetoricsSelection || !state.recipeSelection) {
+  if (!state.conceptGraph || !state.microRhetoricsSelection || !state.recipeSelection || !state.entityAttributeState) {
     throw new Error("Agent 5 requires steps 1–4 to be completed first.");
   }
 
   // Assembly step: build EntitySpec[] from prior structured outputs before calling LLM
-  const entities = assembleEntities(state.conceptGraph, state.microRhetoricsSelection);
+  const entities = assembleEntities(state.conceptGraph, state.microRhetoricsSelection, state.entityAttributeState);
 
   const agentNode = buildVerifierAgent();
   const graph = buildGraph({
@@ -221,15 +221,19 @@ async function runAgent5(state: GameState): Promise<GameState> {
 
   const humanMsg = `Original user concept: ${state.input}
 
-Assembled game specification:
+Concept graph:
+${JSON.stringify(state.conceptGraph, null, 2)}
 
-Entities with components:
-${JSON.stringify(entities, null, 2)}
+Micro-rhetoric selections:
+${JSON.stringify(state.microRhetoricsSelection, null, 2)}
 
-Selected recipes:
+Entity attribute state (this is what you must verify and may repair):
+${JSON.stringify(state.entityAttributeState, null, 2)}
+
+Recipe selection — win and lose conditions (this is what you must verify and may repair):
 ${JSON.stringify(state.recipeSelection, null, 2)}
 
-Analyze this specification for playability issues and propose minimal repairs if needed.`;
+Verify playability and propose minimal repairs to the entity attribute state and/or win/lose conditions if needed.`;
 
   const finalState = await runGraph(graph, {
     messages: [human(humanMsg)],
@@ -239,10 +243,24 @@ Analyze this specification for playability issues and propose minimal repairs if
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const verifierReport = parseJson<any>(raw, "Agent 5 (Verifier)");
 
-  // Apply repairs to entity list
+  // Apply repairs back to entityAttributeState and recipeSelection
+  const { entityAttributeState, recipeSelection } = applyVerifierRepairs(
+    state.entityAttributeState,
+    state.recipeSelection,
+    verifierReport
+  );
+
+  // Apply component-level repairs to entity list
   const repairedEntities = applyRepairs(entities, verifierReport);
 
-  return { ...state, step: 5, entities: repairedEntities, verifierReport };
+  return {
+    ...state,
+    step: 5,
+    entities: repairedEntities,
+    entityAttributeState,
+    recipeSelection,
+    verifierReport,
+  };
 }
 
 async function runAgent6(state: GameState): Promise<GameState> {
@@ -405,11 +423,12 @@ Generate the complete XML game specification now.`;
   return { ...state, step: 7, xmlOutput };
 }
 
-// --- Pure helper: assemble EntitySpec[] from concept graph + micro-rhetoric selections ---
+// --- Pure helper: assemble EntitySpec[] from concept graph + micro-rhetoric selections + entity attribute state ---
 
 function assembleEntities(
   conceptGraph: ConceptGraph,
-  microRhetoricsSelection: MicroRhetoricsSelection
+  microRhetoricsSelection: MicroRhetoricsSelection,
+  entityAttributeState: EntityAttributeState
 ): EntitySpec[] {
   return conceptGraph.entities.map((name, idx) => {
     const relevantComponents = microRhetoricsSelection.selections
@@ -419,12 +438,13 @@ function assembleEntities(
       })
       .map((s) => s.component);
 
-    // Deduplicate components
     const uniqueComponents = [...new Set(relevantComponents)];
+    const attrs = entityAttributeState[name] ?? {};
+    const isPlayer = attrs.isPlayer === true || idx === 0;
 
     return {
       name,
-      isPlayer: idx === 0, // default: first entity is player; verifier can override
+      isPlayer,
       components: uniqueComponents,
       parameters: {
         speed: 100,
@@ -433,6 +453,63 @@ function assembleEntities(
       },
     };
   });
+}
+
+// --- Pure helper: apply verifier repairs to entityAttributeState and recipeSelection ---
+
+function applyVerifierRepairs(
+  entityAttributeState: EntityAttributeState,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  recipeSelection: any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  verifierReport: any
+): { entityAttributeState: EntityAttributeState; recipeSelection: typeof recipeSelection } {
+  if (!verifierReport?.repairs || verifierReport.repairs.length === 0) {
+    return { entityAttributeState, recipeSelection };
+  }
+
+  let updatedAttrs: EntityAttributeState = { ...entityAttributeState };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let updatedRecipe: any = { ...recipeSelection };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const repair of verifierReport.repairs as any[]) {
+    switch (repair.operator) {
+      case "AlterAttribute": {
+        // Win/lose condition repair
+        if (repair.conditionField && repair.conditionValue) {
+          updatedRecipe = { ...updatedRecipe, [repair.conditionField]: repair.conditionValue };
+        } else if (repair.target && repair.attribute !== undefined) {
+          // Entity attribute repair
+          updatedAttrs = {
+            ...updatedAttrs,
+            [repair.target]: {
+              ...(updatedAttrs[repair.target] ?? {}),
+              [repair.attribute]: repair.attributeValue,
+            },
+          };
+        }
+        break;
+      }
+      case "AssignPlayer": {
+        if (repair.target) {
+          // Clear isPlayer on all entities, then set on target
+          const cleared: EntityAttributeState = {};
+          for (const [entity, attrs] of Object.entries(updatedAttrs)) {
+            cleared[entity] = { ...attrs, isPlayer: entity === repair.target };
+          }
+          // Also ensure movesAnyWay=true for new player
+          if (cleared[repair.target]) {
+            cleared[repair.target] = { ...cleared[repair.target], movesAnyWay: true };
+          }
+          updatedAttrs = cleared;
+        }
+        break;
+      }
+    }
+  }
+
+  return { entityAttributeState: updatedAttrs, recipeSelection: updatedRecipe };
 }
 
 // --- Pure helper: apply verifier repairs to entity list ---

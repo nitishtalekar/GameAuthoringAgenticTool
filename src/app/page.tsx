@@ -560,6 +560,49 @@ export default function Home() {
         </div>
       )}
 
+      {/* GameState inspector */}
+      <details
+        style={{
+          marginBottom: 20,
+          border: "1px solid #e0e0e0",
+          borderRadius: 6,
+          overflow: "hidden",
+        }}
+      >
+        <summary
+          style={{
+            padding: "10px 14px",
+            cursor: "pointer",
+            background: "#f9fafb",
+            fontWeight: 600,
+            fontSize: 13,
+            userSelect: "none",
+            listStyle: "none",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            color: "#555",
+          }}
+        >
+          GameState Inspector
+        </summary>
+        <pre
+          style={{
+            margin: 0,
+            padding: "12px 14px",
+            fontSize: 11,
+            lineHeight: 1.5,
+            overflowX: "auto",
+            background: "#fff",
+            color: "#1a1a2e",
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+          }}
+        >
+          {JSON.stringify(gameState, null, 2)}
+        </pre>
+      </details>
+
       {/* Error display */}
       {errorMessage && (
         <div

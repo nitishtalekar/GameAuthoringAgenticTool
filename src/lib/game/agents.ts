@@ -240,44 +240,106 @@ OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no
 /**
  * Agent 4 — Verifier / Repair Agent
  *
- * Analyzes the assembled game spec for playability issues and proposes
- * targeted repairs using a restricted set of operators.
+ * Verifies playability by checking entity attributes and win/lose conditions
+ * against the original concept. Proposes and applies minimal repairs to
+ * entityAttributeState and recipeSelection to ensure the game is playable.
  */
 export function buildVerifierAgent(): NodeFunction {
   const llm = createOpenAIModel({ temperature: 0.1 });
   const componentLibrary = formatMicroRhetoricsForPrompt();
-  const recipeLibrary = formatRecipesForPrompt();
+  const attributeList = formatEntityAttributesForPrompt();
 
   const systemPrompt = `You are a playability verifier and repair agent for the Game-O-Matic system.
-Analyze the assembled game specification and identify issues that would prevent a player from engaging or winning.
+You receive the original concept, entity attribute state, and recipe selection (win/lose conditions).
+Your job is to verify the game is playable and propose targeted repairs if not.
 
-ALLOWED REPAIR OPERATORS: AddComponent, RemoveComponent, ReplaceComponent, AdjustParameter, AssignPlayer
+ALLOWED REPAIR OPERATORS:
+- AlterAttribute: change an attribute value on an entity in entityAttributeState
+- AdjustParameter: change a numeric parameter on an entity (speed, size, spawnRate)
+- AssignPlayer: mark an entity as the player (sets isPlayer=true on that entity's attributes)
+- AddComponent: add a component to an entity's assembled spec
+- RemoveComponent: remove a component from an entity's assembled spec
+- ReplaceComponent: replace one component with another
 
-PLAYABILITY CHECKLIST:
-1. At least one entity is player-controlled (has InputComponent or isPlayer=true)
-2. Player has a way to affect other entities (remove, collide, collect)
-3. Win condition is achievable given current mechanics
-4. Lose condition is distinct from win condition
-5. At least one entity has a movement component
+ENTITY ATTRIBUTE REFERENCE:
+${attributeList}
 
-AVAILABLE COMPONENTS (repairs must only reference component names from this list):
+CONDITION VALUE TYPES — understand these before checking conditions:
+There are two kinds of condition values and you must NOT confuse them:
+- Entity-ref value: the value is an entity name (e.g. "Player"). Check that entityAttributeState[condition.entity][condition.attribute] equals that entity name.
+- Threshold value: the value is a numeric measurement with a unit suffix — pixels (e.g. "256px") or seconds (e.g. "60s"). These are NOT stored in entityAttributeState; they are runtime thresholds evaluated by the game engine. A threshold value is always valid as long as the attribute supports it (growsOverTime, shrinksOverTime → px; movesAnyWay used as survival timer → seconds). Do NOT flag threshold values as issues.
+
+PLAYABILITY CHECKLIST — verify ALL of the following:
+1. Exactly one entity has isPlayer=true in entityAttributeState
+2. The player entity has movesAnyWay=true (player must be able to move)
+3. The win_condition.entity and win_condition.attribute both exist in entityAttributeState
+4. The win_condition value is valid:
+   - If the value ends with "px" or "s" → it is a threshold value; ALWAYS treat this as valid, no repair needed
+   - Otherwise → it is an entity-ref; check that entityAttributeState[win_condition.entity][win_condition.attribute] equals the value
+5. The lose_condition.entity and lose_condition.attribute both exist in entityAttributeState
+6. The lose_condition value is valid (same rule as #4 above — threshold values ending in "px" or "s" are always valid)
+7. Win and lose conditions do not trigger for the same game event (they must be distinct)
+8. At least one non-player entity exists in the game
+
+AVAILABLE COMPONENTS (for AddComponent / ReplaceComponent repairs):
 ${componentLibrary}
 
-If all checks pass, set playable to true and return empty issues/repairs arrays.
-If issues exist, list them and propose the minimal repairs needed to fix them.
+REPAIR RULES:
+- Propose ONLY the minimum repairs necessary
+- AlterAttribute repairs: set "attribute" to the attribute key and "attributeValue" to the new value (boolean, string, or null)
+- AssignPlayer repairs: set "target" to the entity name; this implicitly sets isPlayer=true and movesAnyWay=true on that entity
+- Win/lose condition repairs: use operator="AlterAttribute" with conditionField="win_condition" or "lose_condition" and conditionValue containing the full updated condition object
+- If win_condition or lose_condition reference an attribute that doesn't match any entity's actual attributes, propose an AlterAttribute repair to fix the entity attribute OR a condition repair to point to the correct attribute
+
+SUGGESTIONS vs REPAIRS:
+- "repairs" = actions you WILL apply (minimal, high-confidence fixes)
+- "suggestions" = additional improvements that could help but are not blocking playability (lower confidence or rhetorical improvements)
+
+If all checks pass, set isPlayable=true and return empty issues/repairs arrays.
 
 OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no markdown fences, no extra text:
 {
-  "issues": ["description of issue"],
+  "isPlayable": true,
+  "issues": ["description of each playability issue found"],
   "repairs": [
     {
-      "operator": "OperatorName",
+      "operator": "AlterAttribute",
       "target": "EntityName",
-      "from": "OldComponent",
-      "to": "NewComponent"
+      "attribute": "attributeKey",
+      "attributeValue": true
+    },
+    {
+      "operator": "AssignPlayer",
+      "target": "EntityName"
+    },
+    {
+      "operator": "AlterAttribute",
+      "target": "win_condition",
+      "conditionField": "win_condition",
+      "conditionValue": {
+        "description": "All Asteroid isRemovedBy Player",
+        "entity": "Asteroid",
+        "attribute": "isRemovedBy",
+        "value": "Player"
+      }
+    },
+    {
+      "operator": "AdjustParameter",
+      "target": "EntityName",
+      "parameter": "speed",
+      "value": 150
     }
   ],
-  "playable": true
+  "suggestions": [
+    {
+      "operator": "AdjustParameter",
+      "target": "EntityName",
+      "description": "Increase spawn rate for better pacing",
+      "parameter": "spawnRate",
+      "value": 2.5
+    }
+  ],
+  "repairsSummary": "Plain-English summary of all repairs applied (or 'No repairs needed' if none)."
 }`;
 
   return buildAgentNode(llm, { systemPrompt });
