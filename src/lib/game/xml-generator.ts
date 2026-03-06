@@ -1,5 +1,5 @@
 /**
- * XML validation utilities for Game-O-Matic.
+ * XML validation utilities for Game-Authoring-Tool.
  *
  * The XML document is produced by buildXmlGenerationAgent.
  * This module only validates and sanitizes the agent output — it does NOT
@@ -15,7 +15,7 @@ export function extractXml(raw: string): string {
 }
 
 /**
- * Basic well-formedness check against the Game-O-Matic schema produced by
+ * Basic well-formedness check against the Game-Authoring-Tool schema produced by
  * buildXmlGenerationAgent.
  *
  * Returns true when the document contains the required top-level elements.

@@ -14,7 +14,7 @@ import { formatEntityAttributesForPrompt } from "@/data/entity-attributes";
 export function buildAuthoringAgent(): NodeFunction {
   const llm = createOpenAIModel({ temperature: 0.2 });
 
-  const systemPrompt = `You are a structured concept-map extraction agent for the Game-O-Matic system.
+  const systemPrompt = `You are a structured concept-map extraction agent for the Game-Authoring-Tool system.
 Your sole task is to parse a natural language description and extract entities (nouns) and relations (subject-verb-object triples).
 
 RULES:
@@ -46,7 +46,7 @@ export function buildMicroRhetoricAgent(): NodeFunction {
   const llm = createOpenAIModel({ temperature: 0.3 });
   const library = formatMicroRhetoricsForPrompt();
 
-  const systemPrompt = `You are a micro-rhetoric selection agent for the Game-O-Matic system.
+  const systemPrompt = `You are a micro-rhetoric selection agent for the Game-Authoring-Tool system.
 For each verb relation in the concept graph, select the most appropriate micro-rhetoric from the library below.
 
 MICRO-RHETORIC LIBRARY:
@@ -84,7 +84,7 @@ export function buildEntityAttributeAgent(): NodeFunction {
   const llm = createOpenAIModel({ temperature: 0.2 });
   const attributeList = formatEntityAttributesForPrompt();
 
-  const systemPrompt = `You are an entity attribute assignment agent for the Game-O-Matic system.
+  const systemPrompt = `You are an entity attribute assignment agent for the Game-Authoring-Tool system.
 Given the original user concept, a concept graph, and micro-rhetoric selections, assign values for every predefined attribute to every entity.
 
 PREDEFINED ATTRIBUTES (assign ALL of these for every entity — do not omit any key):
@@ -158,7 +158,7 @@ export function buildRecipeAgent(): NodeFunction {
   const patchRecipes = formatRecipesForPrompt("patch");
   const attributeList = formatEntityAttributesForPrompt();
 
-  const systemPrompt = `You are a recipe selection agent for the Game-O-Matic system.
+  const systemPrompt = `You are a recipe selection agent for the Game-Authoring-Tool system.
 Given the entity attribute state, select one win recipe, one lose recipe, one structure recipe, and any relevant patch recipes.
 Then produce a concrete win_condition and lose_condition that reference the actual entities and attributes from the entity attribute state.
 
@@ -258,7 +258,7 @@ export function buildVerifierAgent(): NodeFunction {
   const componentLibrary = formatMicroRhetoricsForPrompt();
   const attributeList = formatEntityAttributesForPrompt();
 
-  const systemPrompt = `You are a playability verifier and repair agent for the Game-O-Matic system.
+  const systemPrompt = `You are a playability verifier and repair agent for the Game-Authoring-Tool system.
 You receive the original concept, entity attribute state, and recipe selection (win/lose conditions).
 Your job is to verify the game is playable and propose targeted repairs if not.
 
@@ -379,7 +379,7 @@ export function buildRhetoricCriticAgent(): NodeFunction {
   const llm = createOpenAIModel({ temperature: 0.7 });
   const recipeLibrary = formatRecipesForPrompt();
 
-  const systemPrompt = `You are a rhetoric critic agent for the Game-O-Matic system.
+  const systemPrompt = `You are a rhetoric critic agent for the Game-Authoring-Tool system.
 Compare the original concept graph (what the author intended) against the final game mechanics (what the game actually simulates via entityAttributeState and recipeSelection).
 Evaluate how well the gameplay mechanics express the intended rhetorical meaning.
 
@@ -428,7 +428,7 @@ export function buildRhetoricSwapAgent(): NodeFunction {
   const llm = createOpenAIModel({ temperature: 0.1 });
   const componentLibrary = formatMicroRhetoricsForPrompt();
 
-  const systemPrompt = `You are a rhetoric swap agent for the Game-O-Matic system.
+  const systemPrompt = `You are a rhetoric swap agent for the Game-Authoring-Tool system.
 You are given a list of entities with their current components, and a list of suggested_swaps from the rhetoric critic.
 Apply each swap: for the specified entity, replace the component named in "replace" with the component named in "with".
 Only modify the components listed in the swaps. Preserve all other entity data (name, isPlayer, parameters) exactly as given.
@@ -455,12 +455,12 @@ OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no
  * Agent 6 — XML Generation Agent
  *
  * Converts the fully verified and critiqued game specification into a
- * well-formed XML document following the Game-O-Matic schema.
+ * well-formed XML document following the Game-Authoring-Tool schema.
  */
 export function buildXmlGenerationAgent(): NodeFunction {
   const llm = createOpenAIModel({ temperature: 0.1 });
 
-  const systemPrompt = `You are an XML generation agent for the Game-O-Matic engine.
+  const systemPrompt = `You are an XML generation agent for the Game-Authoring-Tool engine.
 Convert the final verified game specification into well-formed XML following the schema below.
 Output ONLY the XML document — no prose, no code fences, no markdown, no additional commentary.
 

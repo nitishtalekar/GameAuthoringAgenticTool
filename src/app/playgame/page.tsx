@@ -422,7 +422,7 @@ export default function PlayGamePage() {
             display: "inline-block",
           }}
         >
-          &larr; Back to Game-O-Matic
+          &larr; Back to Game-Authoring-Tool
         </a>
       </div>
 
