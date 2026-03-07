@@ -23,6 +23,55 @@ import type {
 // Required: LangChain uses Node.js built-ins incompatible with the Edge runtime.
 export const runtime = "nodejs";
 
+// --- Pipeline definition ---
+// To add, remove, or reorder steps: edit ONLY this array.
+// Step numbers are derived from array position (index + 1).
+// Runner functions are declared below and hoisted, so forward references are safe.
+
+type StepDefinition = {
+  name: string;
+  requires: (keyof GameState)[];
+  run: (state: GameState) => Promise<GameState>;
+};
+
+const PIPELINE: StepDefinition[] = [
+  {
+    name: "Authoring",
+    requires: [],
+    run: runAuthoring,
+  },
+  {
+    name: "Micro-Rhetoric",
+    requires: ["conceptGraph"],
+    run: runMicroRhetoric,
+  },
+  {
+    name: "Entity Attributes",
+    requires: ["conceptGraph", "microRhetoricsSelection"],
+    run: runEntityAttributes,
+  },
+  {
+    name: "Recipe Selection",
+    requires: ["conceptGraph", "microRhetoricsSelection"],
+    run: runRecipeSelection,
+  },
+  {
+    name: "Verifier",
+    requires: ["conceptGraph", "microRhetoricsSelection", "entityAttributeState", "recipeSelection"],
+    run: runVerifier,
+  },
+  {
+    name: "Rhetoric Critic",
+    requires: ["entityAttributeState", "recipeSelection", "verifierReport"],
+    run: runRhetoricCritic,
+  },
+  {
+    name: "XML Generation",
+    requires: ["entityAttributeState", "recipeSelection"],
+    run: runXmlGeneration,
+  },
+];
+
 /**
  * POST /api/game/step
  *
@@ -37,9 +86,9 @@ export async function POST(req: NextRequest): Promise<NextResponse<StepResponse>
     const body = (await req.json()) as StepRequest;
     const { step, state } = body;
 
-    if (!step || step < 1 || step > 7) {
+    if (!step || step < 1 || step > PIPELINE.length) {
       return NextResponse.json(
-        { state, error: "Invalid step number. Must be between 1 and 7." },
+        { state, error: `Invalid step number. Must be between 1 and ${PIPELINE.length}.` },
         { status: 400 }
       );
     }
@@ -59,31 +108,21 @@ export async function POST(req: NextRequest): Promise<NextResponse<StepResponse>
 // --- Step dispatcher ---
 
 async function runStep(step: number, state: GameState): Promise<GameState> {
-  switch (step) {
-    case 1:
-      return runAgent1(state);
-    case 2:
-      return runAgent2(state);
-    case 3:
-      return runAgent3(state);   // Entity Attribute Agent (new)
-    case 4:
-      return runAgent4(state);   // Recipe Selection (was 3)
-    case 5:
-      return runAgent5(state);   // Verifier (was 4)
-    case 6:
-      return runAgent6(state);   // Rhetoric Critic (was 5)
-    // case 65:
-    //   return runAgent6b(state);  // Rhetoric Swap + Re-Critique (was 55)
-    case 7:
-      return runAgent7(state);   // XML Generation (was 6)
-    default:
-      throw new Error(`Unhandled step: ${step}`);
+  const def = PIPELINE[step - 1];
+  if (!def) throw new Error(`Unhandled step: ${step}`);
+
+  const missing = def.requires.filter((k) => state[k] == null);
+  if (missing.length > 0) {
+    throw new Error(`${def.name} requires the following fields from previous steps: ${missing.join(", ")}.`);
   }
+
+  const updated = await def.run(state);
+  return { ...updated, step };
 }
 
 // --- Per-step runners ---
 
-async function runAgent1(state: GameState): Promise<GameState> {
+async function runAuthoring(state: GameState): Promise<GameState> {
   const agentNode = buildAuthoringAgent();
   const graph = buildGraph({
     nodes: [{ name: "authoring", fn: agentNode }],
@@ -98,14 +137,10 @@ async function runAgent1(state: GameState): Promise<GameState> {
   const raw = getLastMessageContent(finalState.messages);
   const conceptGraph = parseJson<ConceptGraph>(raw, "Agent 1 (Authoring)");
 
-  return { ...state, step: 1, conceptGraph };
+  return { ...state, conceptGraph };
 }
 
-async function runAgent2(state: GameState): Promise<GameState> {
-  if (!state.conceptGraph) {
-    throw new Error("Agent 2 requires conceptGraph from step 1. Run step 1 first.");
-  }
-
+async function runMicroRhetoric(state: GameState): Promise<GameState> {
   const agentNode = buildMicroRhetoricAgent();
   const graph = buildGraph({
     nodes: [{ name: "microRhetoric", fn: agentNode }],
@@ -130,14 +165,10 @@ Select the best micro-rhetoric for each relation listed above.`;
     "Agent 2 (Micro-Rhetoric Selection)"
   );
 
-  return { ...state, step: 2, microRhetoricsSelection };
+  return { ...state, microRhetoricsSelection };
 }
 
-async function runAgent3(state: GameState): Promise<GameState> {
-  if (!state.conceptGraph || !state.microRhetoricsSelection) {
-    throw new Error("Agent 3 requires conceptGraph and microRhetoricsSelection. Run steps 1–2 first.");
-  }
-
+async function runEntityAttributes(state: GameState): Promise<GameState> {
   const agentNode = buildEntityAttributeAgent();
   const graph = buildGraph({
     nodes: [{ name: "entityAttributes", fn: agentNode }],
@@ -163,14 +194,10 @@ Using the concept, concept graph, and micro-rhetoric selections together, assign
   const raw = getLastMessageContent(finalState.messages);
   const parsed = parseJson<{ entityAttributeState: EntityAttributeState }>(raw, "Agent 3 (Entity Attributes)");
 
-  return { ...state, step: 3, entityAttributeState: parsed.entityAttributeState };
+  return { ...state, entityAttributeState: parsed.entityAttributeState };
 }
 
-async function runAgent4(state: GameState): Promise<GameState> {
-  if (!state.conceptGraph || !state.microRhetoricsSelection) {
-    throw new Error("Agent 4 requires conceptGraph and microRhetoricsSelection. Run steps 1–3 first.");
-  }
-
+async function runRecipeSelection(state: GameState): Promise<GameState> {
   const agentNode = buildRecipeAgent();
   const graph = buildGraph({
     nodes: [{ name: "recipe", fn: agentNode }],
@@ -199,14 +226,10 @@ Select the most appropriate win, lose, structure, and patch recipes for this gam
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recipeSelection = parseJson<any>(raw, "Agent 4 (Recipe Selection)");
 
-  return { ...state, step: 4, recipeSelection };
+  return { ...state, recipeSelection };
 }
 
-async function runAgent5(state: GameState): Promise<GameState> {
-  if (!state.conceptGraph || !state.microRhetoricsSelection || !state.recipeSelection || !state.entityAttributeState) {
-    throw new Error("Agent 5 requires steps 1–4 to be completed first.");
-  }
-
+async function runVerifier(state: GameState): Promise<GameState> {
   const agentNode = buildVerifierAgent();
   const graph = buildGraph({
     nodes: [{ name: "verifier", fn: agentNode }],
@@ -247,18 +270,13 @@ Verify playability, propose minimal repairs, and check concept graph consistency
 
   return {
     ...state,
-    step: 5,
     entityAttributeState,
     recipeSelection,
     verifierReport,
   };
 }
 
-async function runAgent6(state: GameState): Promise<GameState> {
-  if (!state.entityAttributeState || !state.recipeSelection || !state.verifierReport) {
-    throw new Error("Agent 6 requires steps 1–5 to be completed first.");
-  }
-
+async function runRhetoricCritic(state: GameState): Promise<GameState> {
   const agentNode = buildRhetoricCriticAgent();
   const graph = buildGraph({
     nodes: [{ name: "critic", fn: agentNode }],
@@ -287,15 +305,10 @@ Evaluate how well the game mechanics express the intended rhetorical meaning.`;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rhetoricCritique = parseJson<any>(raw, "Agent 6 (Rhetoric Critic)");
 
-  return { ...state, step: 6, rhetoricCritique };
+  return { ...state, rhetoricCritique };
 }
 
-
-async function runAgent7(state: GameState): Promise<GameState> {
-  if (!state.entityAttributeState || !state.recipeSelection) {
-    throw new Error("Agent 7 requires steps 1–6 to be completed first.");
-  }
-
+async function runXmlGeneration(state: GameState): Promise<GameState> {
   const agentNode = buildXmlGenerationAgent();
   const graph = buildGraph({
     nodes: [{ name: "xmlGen", fn: agentNode }],
@@ -331,7 +344,7 @@ Generate the complete XML game specification now.`;
     throw new Error("XML generation agent produced invalid output.");
   }
 
-  return { ...state, step: 7, xmlOutput: cleaned };
+  return { ...state, xmlOutput: cleaned };
 }
 
 // --- Pure helper: apply a list of repair/suggestion actions to entityAttributeState and recipeSelection ---
