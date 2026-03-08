@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { buildGraph, runGraph } from "@/lib/graph";
 import { human, getLastMessageContent } from "@/utils/messages";
 import {
+  buildNewsToConceptAgent,
   buildAuthoringAgent,
   buildMicroRhetoricAgent,
   buildEntityAttributeAgent,
@@ -35,6 +36,11 @@ type StepDefinition = {
 };
 
 const PIPELINE: StepDefinition[] = [
+  {
+    name: "News → Concept Map",
+    requires: [],
+    run: runNewsToConceptMap,
+  },
   {
     name: "Authoring",
     requires: [],
@@ -121,6 +127,23 @@ async function runStep(step: number, state: GameState): Promise<GameState> {
 }
 
 // --- Per-step runners ---
+
+async function runNewsToConceptMap(state: GameState): Promise<GameState> {
+  const agentNode = buildNewsToConceptAgent();
+  const graph = buildGraph({
+    nodes: [{ name: "newsToConcept", fn: agentNode }],
+    edges: [{ from: "newsToConcept", to: "END" }],
+    entryPoint: "newsToConcept",
+  });
+
+  const source = state.initialInput ?? state.input;
+  const finalState = await runGraph(graph, {
+    messages: [human(source)],
+  });
+
+  const conceptMapText = getLastMessageContent(finalState.messages).trim();
+  return { ...state, input: conceptMapText };
+}
 
 async function runAuthoring(state: GameState): Promise<GameState> {
   const agentNode = buildAuthoringAgent();
@@ -263,7 +286,7 @@ Verify playability, propose minimal repairs, and check concept graph consistency
 
   // Apply repairs back to entityAttributeState and recipeSelection
   const { entityAttributeState, recipeSelection } = applyVerifierRepairs(
-    state.entityAttributeState,
+    state.entityAttributeState!,
     state.recipeSelection,
     verifierReport
   );

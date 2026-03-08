@@ -142,6 +142,9 @@ export type EntityAttributeState = Record<string, EntityAttributeMap>;
 
 export interface GameState {
   step: number;
+  /** Raw article / original user text before distillation */
+  initialInput?: string;
+  /** Distilled concept-map string produced by the News→Concept agent (or the user's direct input) */
   input: string;
   conceptGraph?: ConceptGraph;
   microRhetoricsSelection?: MicroRhetoricsSelection;

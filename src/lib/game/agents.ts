@@ -6,7 +6,37 @@ import { formatRecipesForPrompt } from "@/data/recipes";
 import { formatEntityAttributesForPrompt } from "@/data/entity-attributes";
 
 /**
- * Agent 1 — Authoring Agent
+ * News → Concept Map Agent
+ *
+ * Takes a raw news article (or any freeform text) and distills it into a
+ * compact, structured concept map: 2–6 subject-verb-object sentences that
+ * capture the key relationships described in the article.
+ */
+export function buildNewsToConceptAgent(): NodeFunction {
+  const llm = createOpenAIModel({ temperature: 0.2 });
+
+  const systemPrompt = `You are a concept-map extraction agent for the Game-Authoring-Tool system.
+Your task is to read a news article (or any descriptive text) and distill it into a compact concept map expressed as plain English sentences.
+
+RULES:
+- Output ONLY 2–6 short subject-verb-object sentences, one per line.
+- Each sentence must follow the pattern: "Subject verb Object." (e.g. "Police arrests Occupier.")
+- Use simple present-tense verbs.
+- Entity names must be proper nouns or capitalised common nouns (e.g. "Police", "WallStreet", "Occupier").
+- Capture only the most important relationships from the text — omit details, adjectives, and commentary.
+- Do NOT output any prose, explanation, numbering, or markdown — only the sentences.
+
+EXAMPLE INPUT:
+On the six month anniversary of the Occupy Wall Street movement, protesters returned to New York's Zuccotti Park and several were arrested. The occupiers are obstructing Wall Street and are being arrested by police, but Wall Street is also growing the occupy movement.
+
+EXAMPLE OUTPUT:
+Police arrests Occupier. Occupier obstructs WallStreet. WallStreet grows Occupier.`;
+
+  return buildAgentNode(llm, { systemPrompt });
+}
+
+/**
+ * Authoring Agent
  *
  * Converts natural language concept map descriptions into a structured
  * ConceptGraph with entities and relations.
@@ -37,7 +67,7 @@ OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no
 }
 
 /**
- * Agent 2 — Micro-Rhetoric Selection Agent
+ * Micro-Rhetoric Selection Agent
  *
  * Maps each verb relation in the concept graph to the most appropriate
  * micro-rhetoric from the static library.
@@ -74,7 +104,7 @@ OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no
 }
 
 /**
- * Agent 3 — Entity Attribute Agent
+ * Entity Attribute Agent
  *
  * Reads the concept graph and micro-rhetoric selections, then assigns
  * values for every predefined attribute to every entity in the game.
@@ -145,7 +175,7 @@ OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no
 }
 
 /**
- * Agent 4 — Recipe Selection Agent
+ * Recipe Selection Agent
  *
  * Selects win, lose, structure, and patch recipes based on the current
  * entity and component state.
@@ -247,7 +277,7 @@ OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no
 }
 
 /**
- * Agent 4 — Verifier / Repair Agent
+ * Verifier / Repair Agent
  *
  * Verifies playability by checking entity attributes and win/lose conditions
  * against the original concept. Proposes and applies minimal repairs to
@@ -370,7 +400,7 @@ OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no
 }
 
 /**
- * Agent 5 — Rhetoric Critic Agent
+ * Rhetoric Critic Agent
  *
  * Evaluates whether the final mechanics express the intended rhetorical
  * meaning from the original concept map.
@@ -419,7 +449,7 @@ OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no
 }
 
 /**
- * Agent 5b — Rhetoric Swap Agent
+ * Rhetoric Swap Agent
  *
  * Applies suggested component swaps from the Rhetoric Critic to the entity
  * list, producing an updated EntitySpec[] with improved rhetorical alignment.
@@ -452,7 +482,7 @@ OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no
 }
 
 /**
- * Agent 6 — XML Generation Agent
+ * XML Generation Agent
  *
  * Converts the fully verified and critiqued game specification into a
  * well-formed XML document following the Game-Authoring-Tool schema.

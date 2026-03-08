@@ -7,36 +7,40 @@ import type { GameState, StepResponse } from "@/lib/game/types";
 
 const STEP_LABELS: Record<number, { title: string; description: string }> = {
   1: {
-    title: "Authoring",
-    description: "Extracting entities and relations from your concept map",
+    title: "News → Concept Map",
+    description: "Distilling the article into a structured concept map",
   },
   2: {
+    title: "Authoring",
+    description: "Extracting entities and relations from the concept map",
+  },
+  3: {
     title: "Micro-Rhetoric Selection",
     description: "Mapping each verb relationship to a gameplay mechanic",
   },
-  3: {
+  4: {
     title: "Entity Attribute State",
     description: "Assigning semantic attributes to each entity",
   },
-  4: {
+  5: {
     title: "Recipe Selection",
     description: "Choosing win condition, lose condition, and layout structure",
   },
-  5: {
+  6: {
     title: "Verification & Repair",
     description: "Checking playability and applying fixes if needed",
   },
-  6: {
+  7: {
     title: "Rhetoric Critique",
     description: "Evaluating whether mechanics express your intended meaning",
   },
-  7: {
+  8: {
     title: "XML Generation",
     description: "Generating the final game engine specification",
   },
 };
 
-const TOTAL_STEPS = 7;
+const TOTAL_STEPS = 8;
 
 // --- StepCard: collapsible result display ---
 
@@ -154,7 +158,7 @@ export default function Home() {
 
   const handleStart = useCallback(async () => {
     if (!inputText.trim()) return;
-    const initialState: GameState = { step: 0, input: inputText.trim() };
+    const initialState: GameState = { step: 0, input: "", initialInput: inputText.trim() };
     setGameState(initialState);
     await advanceStep(1, initialState);
   }, [inputText, advanceStep]);
@@ -214,13 +218,13 @@ export default function Home() {
             htmlFor="concept-input"
             style={{ display: "block", fontWeight: 600, marginBottom: 8, fontSize: 14, color: "white" }}
           >
-            Describe your concept map in plain language
+            Paste a news article or describe your concept map in plain language
           </label>
           <p style={{ margin: "0 0 10px", fontSize: 13, color: "#666" }}>
-            Example: "Police arrests Occupier. Occupier obstructs WallStreet. WallStreet grows Occupier." 
+            Article example: "On the six month anniversary of the Occupy Wall Street movement, protesters returned to New York's Zuccotti Park and several were arrested. The occupiers are obstructing Wall Street and are being arrested by police, but Wall Street is also growing the occupy movement."
           </p>
-           <p style={{ margin: "0 0 10px", fontSize: 13, color: "#666" }}>
-            Example: "Lion eats deer. Deer runs everywhere. Trees stop deer" 
+          <p style={{ margin: "0 0 10px", fontSize: 13, color: "#666" }}>
+            Short concept map also works: "Police arrests Occupier. Occupier obstructs WallStreet. WallStreet grows Occupier."
           </p>
           <textarea
             id="concept-input"
@@ -255,7 +259,7 @@ export default function Home() {
               cursor: inputText.trim() && !isLoading ? "pointer" : "not-allowed",
             }}
           >
-            {isLoading ? "Running Step 1..." : "Start — Step 1 of 7: Authoring"}
+            {isLoading ? `Running Step 1 of ${TOTAL_STEPS}...` : `Start — Step 1 of ${TOTAL_STEPS}: ${STEP_LABELS[1]?.title ?? ""}`}
           </button>
         </section>
       )}
@@ -319,8 +323,8 @@ export default function Home() {
         </div>
       )}
 
-      {/* Original concept display */}
-      {currentStep >= 1 && (
+      {/* Original article display */}
+      {currentStep >= 1 && gameState.initialInput && (
         <div
           style={{
             marginBottom: 20,
@@ -332,62 +336,70 @@ export default function Home() {
             color: "#444",
           }}
         >
-          <strong>Concept:</strong> {gameState.input}
+          <strong>Article:</strong> {gameState.initialInput}
         </div>
       )}
 
       {/* Step cards — each completed step's output */}
       <div style={{ marginBottom: 24 }}>
-        {gameState.conceptGraph && (
+        {currentStep >= 1 && gameState.input && (
           <StepCard
             stepNumber={1}
+            title="News → Concept Map"
+            data={gameState.input}
+            isLatest={currentStep === 1 && !isLoading}
+          />
+        )}
+        {gameState.conceptGraph && (
+          <StepCard
+            stepNumber={2}
             title="Authoring — Concept Graph"
             data={gameState.conceptGraph}
-            isLatest={currentStep === 1 && !isLoading}
+            isLatest={currentStep === 2 && !isLoading}
           />
         )}
         {gameState.microRhetoricsSelection && (
           <StepCard
-            stepNumber={2}
+            stepNumber={3}
             title="Micro-Rhetoric Selection"
             data={gameState.microRhetoricsSelection}
-            isLatest={currentStep === 2 && !isLoading}
+            isLatest={currentStep === 3 && !isLoading}
           />
         )}
         {gameState.entityAttributeState && (
           <StepCard
-            stepNumber={3}
+            stepNumber={4}
             title="Entity Attribute State"
             data={gameState.entityAttributeState}
-            isLatest={currentStep === 3 && !isLoading}
+            isLatest={currentStep === 4 && !isLoading}
           />
         )}
         {gameState.recipeSelection && (
           <StepCard
-            stepNumber={4}
+            stepNumber={5}
             title="Recipe Selection"
             data={gameState.recipeSelection}
-            isLatest={currentStep === 4 && !isLoading}
+            isLatest={currentStep === 5 && !isLoading}
           />
         )}
         {gameState.verifierReport && (
           <StepCard
-            stepNumber={5}
+            stepNumber={6}
             title="Verification & Repair"
             data={gameState.verifierReport}
-            isLatest={currentStep === 5 && !isLoading}
+            isLatest={currentStep === 6 && !isLoading}
           />
         )}
         {gameState.rhetoricCritique && (
           <StepCard
-            stepNumber={6}
+            stepNumber={7}
             title="Rhetoric Critique"
             data={gameState.rhetoricCritique}
-            isLatest={currentStep === 6 && !isLoading}
+            isLatest={currentStep === 7 && !isLoading}
           />
         )}
 
-        {/* XML output (step 6) */}
+        {/* XML output (step 8) */}
         {gameState.xmlOutput && (
           <details
             open
@@ -427,9 +439,9 @@ export default function Home() {
                   flexShrink: 0,
                 }}
               >
-                7
+                8
               </span>
-              XML Game Specification — Final Output
+              XML Game Specification — Final Output (Step 8)
             </summary>
             <pre
               style={{
