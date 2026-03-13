@@ -23,7 +23,7 @@ export interface ParsedEntity {
 
 export interface ParsedSpawn {
   entity: string;
-  zone: "left" | "right" | "center" | "top" | "bottom";
+  zone: "left" | "right" | "center" | "top" | "bottom" | "edges" | "random";
   interval: number;
 }
 
@@ -48,7 +48,7 @@ export interface ParsedGame {
   };
 }
 
-const VALID_ZONES = new Set(["left", "right", "center", "top", "bottom"]);
+const VALID_ZONES = new Set(["left", "right", "center", "top", "bottom", "edges", "random"]);
 
 function toZone(raw: string | null): ParsedSpawn["zone"] {
   if (raw && VALID_ZONES.has(raw)) return raw as ParsedSpawn["zone"];

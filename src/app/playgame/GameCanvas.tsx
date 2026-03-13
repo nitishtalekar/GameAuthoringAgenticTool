@@ -35,24 +35,56 @@ const CANVAS_W = 800;
 const CANVAS_H = 500;
 const PLAYER_COLOR = 0x3498db;
 
-// Zone → spawn coordinates
-function zoneCoords(zone: ParsedSpawn["zone"], size: number): { x: number; y: number } {
+/** Which edge an entity spawned from — used to compute an inward initial velocity. */
+type SpawnEdge = "left" | "right" | "top" | "bottom" | null;
+
+// Zone → spawn coordinates (+ which edge, if any, for inward-velocity calculation)
+function zoneCoords(
+  zone: ParsedSpawn["zone"],
+  size: number
+): { x: number; y: number; edge: SpawnEdge } {
   const s = size / 2;
   switch (zone) {
     case "left":
-      return { x: s + 10, y: s + Math.random() * (CANVAS_H - size) };
+      return { x: s + 10, y: s + Math.random() * (CANVAS_H - size), edge: "left" };
     case "right":
-      return { x: CANVAS_W - s - 10, y: s + Math.random() * (CANVAS_H - size) };
+      return { x: CANVAS_W - s - 10, y: s + Math.random() * (CANVAS_H - size), edge: "right" };
     case "top":
-      return { x: s + Math.random() * (CANVAS_W - size), y: s + 10 };
+      return { x: s + Math.random() * (CANVAS_W - size), y: s + 10, edge: "top" };
     case "bottom":
-      return { x: s + Math.random() * (CANVAS_W - size), y: CANVAS_H - s - 10 };
+      return { x: s + Math.random() * (CANVAS_W - size), y: CANVAS_H - s - 10, edge: "bottom" };
+    case "edges": {
+      // Pick one of the four edges at random, place entity just off it
+      const pick = Math.floor(Math.random() * 4) as 0 | 1 | 2 | 3;
+      if (pick === 0) return { x: s + 10,              y: s + Math.random() * (CANVAS_H - size), edge: "left"   };
+      if (pick === 1) return { x: CANVAS_W - s - 10,   y: s + Math.random() * (CANVAS_H - size), edge: "right"  };
+      if (pick === 2) return { x: s + Math.random() * (CANVAS_W - size), y: s + 10,              edge: "top"    };
+      /*  pick === 3 */return { x: s + Math.random() * (CANVAS_W - size), y: CANVAS_H - s - 10,  edge: "bottom" };
+    }
+    case "random":
+      return {
+        x: s + Math.random() * (CANVAS_W - size * 2),
+        y: s + Math.random() * (CANVAS_H - size * 2),
+        edge: null,
+      };
     case "center":
     default:
       return {
         x: CANVAS_W / 2 - 100 + Math.random() * 200,
         y: CANVAS_H / 2 - 75 + Math.random() * 150,
+        edge: null,
       };
+  }
+}
+
+/** Returns the initial velocity that moves an entity inward from a given edge. */
+function inwardVelocity(edge: SpawnEdge, speed: number): { vx: number; vy: number } {
+  switch (edge) {
+    case "left":   return { vx:  speed, vy: 0 };
+    case "right":  return { vx: -speed, vy: 0 };
+    case "top":    return { vx: 0, vy:  speed };
+    case "bottom": return { vx: 0, vy: -speed };
+    default:       return { vx: 0, vy: 0 };
   }
 }
 
@@ -312,11 +344,22 @@ class GameScene extends Phaser.Scene {
     zone: ParsedSpawn["zone"]
   ): EnemyRect {
     const size = ent.params.size ?? 32;
-    const { x, y } = zoneCoords(zone, size);
+    const { x, y, edge } = zoneCoords(zone, size);
     const rect = this.add.rectangle(x, y, size, size, behavior.color) as EnemyRect;
     this.physics.add.existing(rect);
-    (rect.body as Phaser.Physics.Arcade.Body).setCollideWorldBounds(true);
+    const body = rect.body as Phaser.Physics.Arcade.Body;
+    body.setCollideWorldBounds(true);
     group.add(rect);
+
+    // Give edge-spawned entities an initial inward push so they enter the arena
+    // immediately. Homing/fleeing enemies override velocity every frame anyway;
+    // wandering entities pick a direction on their first _wanderTimer tick, so
+    // this nudge carries them to a visible position before that fires.
+    if (edge && !behavior.movesTowardPlayer && !behavior.movesAwayFromPlayer) {
+      const speed = ent.params.speed ?? 80;
+      const { vx, vy } = inwardVelocity(edge, speed * 0.7);
+      body.setVelocity(vx, vy);
+    }
 
     // Per-instance state
     rect._patrolDir = Math.random() > 0.5 ? 1 : -1;

@@ -543,8 +543,36 @@ Map recipeSelection.win_condition and lose_condition to XML using these rules:
 
 STEP 4 — DERIVE LAYOUT
 For each non-player entity with spawnRate > 0, emit one <spawn> element.
-zone: if isFleeing=true or chasedBy is not null → "random"; otherwise → "top".
 interval: compute as 1 / spawnRate, rounded to 1 decimal place, with unit "s".
+
+Assign zone based on the structure_recipe selected AND the entity's attributes, using these rules:
+
+"Frogger Layout":
+  - Player entity: zone="left"
+  - All non-player entities: zone="right" (hazards enter from the right and move left across lanes)
+
+"Asteroids Layout":
+  - All non-player entities: zone="edges" (spawn from all four edges and drift inward)
+
+"Space Invaders Layout":
+  - All non-player entities: zone="top" (enemies arranged in grid at top)
+  - Player entity spawns at: zone="bottom" (implicit, no <spawn> needed for player)
+
+"Arena Layout":
+  - All non-player entities: zone="edges" (converge from all sides toward center)
+
+"Chase Layout":
+  - Entity with chasedBy set (i.e. it is being chased): zone="center"
+  - Entity that is doing the chasing (has movesAnyWay=true and isPlayer=false): zone="edges"
+  - If isFleeing=true: zone="random"
+
+"Tower Defense Layout":
+  - All non-player entities following a path: zone="left" (enter from left, traverse to right)
+  - Player-controlled interceptors: no spawn element
+
+FALLBACK (if structure_recipe does not match any above):
+  - isFleeing=true or chasedBy is not null → zone="random"
+  - Otherwise → zone="top"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 XML SCHEMA (fill every placeholder — no comments in output):
