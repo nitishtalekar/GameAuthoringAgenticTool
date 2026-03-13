@@ -31,7 +31,7 @@ export interface EntityBehavior {
 
   /** This entity is destroyed when it overlaps the colliding entity (isRemovedBy). */
   isRemovedBy: boolean;
-  /** This entity grows by 6 px on overlap with the colliding entity (growsBy). */
+  /** This entity grows by 6 px when its actor overlaps it (growsBy). */
   growsBy: boolean;
   /** The player (or colliding entity) shrinks by 6 px on overlap (shrinksBy). */
   shrinksBy: boolean;
@@ -89,7 +89,7 @@ const ATTRIBUTE_PRIORITY: string[] = [
  *   isDamagedBy  → TARGET owns it  (Player isDamagedBy Enemy → Player.isDamagedBy = true)
  *   chasedBy     → TARGET owns it  (Deer chasedBy Lion → Deer.chasedBy = true; Lion gets homing)
  *   stopsBy      → TARGET owns it  (Entity stopsBy Wall → Entity's velocity is zeroed on contact)
- *   growsBy      → ACTOR owns it   (actor="Entity" growsBy → Entity grows on contact)
+ *   growsBy      → TARGET owns it  (actor="Occupier" growsBy target="WallStreet" → WallStreet grows on contact)
  *   shrinksBy    → ACTOR owns it   (actor="Entity" shrinksBy → player shrinks on contact)
  *
  * @param behaviorAttrs  — key/value pairs from <behavior> element
@@ -119,8 +119,9 @@ export function buildBehavior(
     isDamagedBy: targetSet.has("isdamagedby"),
     chasedBy:    targetSet.has("chasedby"),
     stopsBy:     targetSet.has("stopsby"),
+    // target-owned: this entity IS the one receiving growth from its actor
+    growsBy:   targetSet.has("growsby"),
     // actor-owned: this entity IS the one applying these effects
-    growsBy:   actorSet.has("growsby"),
     shrinksBy: actorSet.has("shrinksby"),
   };
 

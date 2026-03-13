@@ -44,7 +44,6 @@ export interface ParsedEntity {
 export interface ParsedSpawn {
   entity: string;
   zone: "left" | "right" | "center" | "top" | "bottom" | "edges" | "random";
-  interval: number;
 }
 
 export interface ParsedGame {
@@ -200,7 +199,6 @@ export function parseGameXml(xml: string): ParsedGame | null {
   ).map((s) => ({
     entity: s.getAttribute("entity") ?? "",
     zone:   toZone(s.getAttribute("zone")),
-    interval: parseDuration(s.getAttribute("interval"), 2.0),
   }));
 
   return {

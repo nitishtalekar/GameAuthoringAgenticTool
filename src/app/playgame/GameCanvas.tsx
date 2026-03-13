@@ -27,6 +27,8 @@ type EnemyRect = Phaser.GameObjects.Rectangle & {
   _wanderTimer: number;
   /** True while this entity is frozen by a stopsBy interaction */
   _frozen?: boolean;
+  /** True while on cooldown after a growsBy/shrinksBy contact — prevents per-frame repeat */
+  _contactCooldown?: boolean;
 };
 
 // ---------------------------------------------------------------------------
@@ -214,9 +216,9 @@ class GameScene extends Phaser.Scene {
           } else {
             spawnsForEnt.forEach((sp) => {
               this.spawnObstacle(ent, sp.zone);
-              if (sp.interval > 0) {
+              if (ent.params.spawnRate > 0) {
                 this.time.addEvent({
-                  delay: sp.interval * 1000,
+                  delay: 1000 / ent.params.spawnRate,
                   callback: () => this.spawnObstacle(ent, sp.zone),
                   loop: true,
                 });
@@ -237,9 +239,9 @@ class GameScene extends Phaser.Scene {
           spawnsForEnt.forEach((sp) => {
             this.spawnEnemy(group, ent, behavior, sp.zone);
             this.totalEnemies++;
-            if (sp.interval > 0) {
+            if (ent.params.spawnRate > 0) {
               this.time.addEvent({
-                delay: sp.interval * 1000,
+                delay: 1000 / ent.params.spawnRate,
                 callback: () => {
                   this.spawnEnemy(group, ent, behavior, sp.zone);
                   this.totalEnemies++;
@@ -277,6 +279,26 @@ class GameScene extends Phaser.Scene {
             this.onEntityContact(rect, behavior);
           }
         );
+      }
+    });
+
+    // Entity-vs-entity overlaps (e.g. Occupier touches WallStreet → WallStreet grows)
+    interactions.forEach((interaction) => {
+      const actorGroup  = this.entityGroups.find((g) => g.entity.name === interaction.actor);
+      const targetGroup = this.entityGroups.find((g) => g.entity.name === interaction.target);
+      if (!actorGroup || !targetGroup) return;
+
+      if (interaction.attribute === "growsBy") {
+        this.physics.add.overlap(actorGroup.group, targetGroup.group, (_a, b) => {
+          const rect = b as EnemyRect;
+          if (rect._contactCooldown) return;
+          rect._contactCooldown = true;
+          const newW = (rect.width as number) + 6;
+          const newH = (rect.height as number) + 6;
+          rect.setSize(newW, newH);
+          (rect.body as Phaser.Physics.Arcade.Body).setSize(newW, newH);
+          this.time.delayedCall(500, () => { rect._contactCooldown = false; });
+        });
       }
     });
 
@@ -401,21 +423,25 @@ class GameScene extends Phaser.Scene {
       return; // entity is gone, skip further effects
     }
 
-    // growsBy: this entity grows on contact with player
-    if (behavior.growsBy) {
+    // growsBy: this entity grows by 6 px once per contact (cooldown prevents per-frame repeat)
+    if (behavior.growsBy && !entity._contactCooldown) {
+      entity._contactCooldown = true;
       const newW = (entity.width as number) + 6;
       const newH = (entity.height as number) + 6;
       entity.setSize(newW, newH);
       (entity.body as Phaser.Physics.Arcade.Body).setSize(newW, newH);
+      this.time.delayedCall(500, () => { entity._contactCooldown = false; });
     }
 
-    // shrinksBy: player shrinks on contact
-    if (behavior.shrinksBy) {
+    // shrinksBy: player shrinks by 6 px once per contact (cooldown prevents per-frame repeat)
+    if (behavior.shrinksBy && !entity._contactCooldown) {
+      entity._contactCooldown = true;
       const minSize = 10;
       const newW = Math.max(minSize, (this.player.width as number) - 6);
       const newH = Math.max(minSize, (this.player.height as number) - 6);
       this.player.setSize(newW, newH);
       (this.player.body as Phaser.Physics.Arcade.Body).setSize(newW, newH);
+      this.time.delayedCall(500, () => { entity._contactCooldown = false; });
     }
 
     // stopsBy: this entity's own velocity is zeroed for 1.2 s on contact
