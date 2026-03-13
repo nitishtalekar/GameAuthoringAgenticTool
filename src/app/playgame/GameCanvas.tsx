@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import Phaser from "phaser";
 import type { ParsedGame, ParsedEntity, ParsedSpawn } from "@/lib/game/xml-parser";
-import { mergeBehaviors, type ComponentBehavior } from "@/data/component-behaviors";
+import { buildBehavior, type EntityBehavior } from "@/data/component-behaviors";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -54,12 +54,11 @@ function zoneCoords(
     case "bottom":
       return { x: s + Math.random() * (CANVAS_W - size), y: CANVAS_H - s - 10, edge: "bottom" };
     case "edges": {
-      // Pick one of the four edges at random, place entity just off it
       const pick = Math.floor(Math.random() * 4) as 0 | 1 | 2 | 3;
-      if (pick === 0) return { x: s + 10,              y: s + Math.random() * (CANVAS_H - size), edge: "left"   };
-      if (pick === 1) return { x: CANVAS_W - s - 10,   y: s + Math.random() * (CANVAS_H - size), edge: "right"  };
-      if (pick === 2) return { x: s + Math.random() * (CANVAS_W - size), y: s + 10,              edge: "top"    };
-      /*  pick === 3 */return { x: s + Math.random() * (CANVAS_W - size), y: CANVAS_H - s - 10,  edge: "bottom" };
+      if (pick === 0) return { x: s + 10,            y: s + Math.random() * (CANVAS_H - size), edge: "left"   };
+      if (pick === 1) return { x: CANVAS_W - s - 10, y: s + Math.random() * (CANVAS_H - size), edge: "right"  };
+      if (pick === 2) return { x: s + Math.random() * (CANVAS_W - size), y: s + 10,            edge: "top"    };
+      /*  pick === 3 */return { x: s + Math.random() * (CANVAS_W - size), y: CANVAS_H - s - 10, edge: "bottom" };
     }
     case "random":
       return {
@@ -94,8 +93,8 @@ function inwardVelocity(edge: SpawnEdge, speed: number): { vx: number; vy: numbe
 
 interface EntityGroup {
   entity: ParsedEntity;
-  /** Merged behavior from ALL components (intrinsic + relational) */
-  behavior: ComponentBehavior;
+  /** Merged behavior derived from behavior attrs + interaction attrs */
+  behavior: EntityBehavior;
   group: Phaser.Physics.Arcade.Group;
 }
 
@@ -148,7 +147,7 @@ class GameScene extends Phaser.Scene {
   preload() {}
 
   create() {
-    const { entities, relations, winCondition, loseCondition, layout } = this.pg;
+    const { entities, interactions, winCondition, loseCondition, layout } = this.pg;
 
     this.physics.world.setBounds(0, 0, CANVAS_W, CANVAS_H);
 
@@ -178,9 +177,9 @@ class GameScene extends Phaser.Scene {
     // ---------- Input ----------
     this.cursors = this.input.keyboard!.createCursorKeys();
     this.wasdKeys = {
-      up: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.W),
-      down: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.S),
-      left: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.A),
+      up:    this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.W),
+      down:  this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.S),
+      left:  this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.A),
       right: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.D),
     };
 
@@ -191,12 +190,15 @@ class GameScene extends Phaser.Scene {
     entities
       .filter((e) => !e.isPlayer)
       .forEach((ent) => {
-        // Merge ALL components: intrinsic (entity.components) + relational (relations)
-        const intrinsicComponents = ent.components;
-        const relComponents = relations
-          .filter((r) => r.from === ent.name)
-          .map((r) => r.component);
-        const behavior = mergeBehaviors([...intrinsicComponents, ...relComponents]);
+        // Collect interaction attribute names where this entity is the actor
+        const actorAttrs = interactions
+          .filter((i) => i.actor === ent.name)
+          .map((i) => i.attribute);
+
+        const behavior = buildBehavior(
+          ent.behavior as unknown as Record<string, boolean | string | null>,
+          actorAttrs
+        );
 
         if (behavior.isStatic) {
           const spawnsForEnt = layout.spawns.filter((s) => s.entity === ent.name);
@@ -220,8 +222,6 @@ class GameScene extends Phaser.Scene {
         const group = this.physics.add.group();
 
         const spawnsForEnt = layout.spawns.filter((s) => s.entity === ent.name);
-        const spawnZone: ParsedSpawn["zone"] =
-          spawnsForEnt.length > 0 ? spawnsForEnt[0].zone : "right";
 
         if (spawnsForEnt.length === 0) {
           this.spawnEnemy(group, ent, behavior, "right");
@@ -243,20 +243,6 @@ class GameScene extends Phaser.Scene {
           });
         }
 
-        // Spawner: create clones on interval (driven by spawnRate param)
-        if (behavior.spawnsOnInterval) {
-          const spawnRateMs = (ent.params.spawnRate ?? 3.0) * 1000;
-          this.time.addEvent({
-            delay: spawnRateMs,
-            callback: () => {
-              if (this.gameOver) return;
-              this.spawnEnemy(group, ent, behavior, spawnZone);
-              this.totalEnemies++;
-            },
-            loop: true,
-          });
-        }
-
         this.entityGroups.push({ entity: ent, behavior, group });
       });
 
@@ -268,15 +254,14 @@ class GameScene extends Phaser.Scene {
 
     // Player vs each entity group — driven by behavior flags
     this.entityGroups.forEach(({ behavior, group }) => {
-      if (
-        behavior.removeOnContact ||
-        behavior.damagesPlayer ||
-        behavior.scoreOnContact ||
-        behavior.growsOnContact ||
-        behavior.shrinksPlayerOnContact ||
-        behavior.pushesPlayerOnContact ||
-        behavior.freezesPlayerOnContact
-      ) {
+      const hasContactEffect =
+        behavior.isRemovedBy ||
+        behavior.isDamagedBy ||
+        behavior.growsBy ||
+        behavior.shrinksBy ||
+        behavior.stopsBy;
+
+      if (hasContactEffect) {
         this.physics.add.overlap(
           this.player,
           group,
@@ -302,15 +287,12 @@ class GameScene extends Phaser.Scene {
 
     // ---------- HUD ----------
     const hudStyle = { fontSize: "13px", color: "#ffffff", fontFamily: "monospace" };
-    this.hudHealth = this.add.text(10, 10, `HP: ${this.health}`, hudStyle).setDepth(10);
-    this.hudTimer = this.add.text(10, 28, `Time: 0s`, hudStyle).setDepth(10);
-    this.hudScore = this.add.text(10, 46, `Score: 0`, hudStyle).setDepth(10);
+    this.hudHealth    = this.add.text(10, 10, `HP: ${this.health}`,  hudStyle).setDepth(10);
+    this.hudTimer     = this.add.text(10, 28, `Time: 0s`,            hudStyle).setDepth(10);
+    this.hudScore     = this.add.text(10, 46, `Score: 0`,            hudStyle).setDepth(10);
 
     this.hudWinTarget = this.add
-      .text(CANVAS_W - 10, 10, this.winTargetLabel(), {
-        ...hudStyle,
-        align: "right",
-      })
+      .text(CANVAS_W - 10, 10, this.winTargetLabel(), { ...hudStyle, align: "right" })
       .setOrigin(1, 0)
       .setDepth(10);
   }
@@ -340,7 +322,7 @@ class GameScene extends Phaser.Scene {
   private spawnEnemy(
     group: Phaser.Physics.Arcade.Group,
     ent: ParsedEntity,
-    behavior: ComponentBehavior,
+    behavior: EntityBehavior,
     zone: ParsedSpawn["zone"]
   ): EnemyRect {
     const size = ent.params.size ?? 32;
@@ -351,22 +333,18 @@ class GameScene extends Phaser.Scene {
     body.setCollideWorldBounds(true);
     group.add(rect);
 
-    // Give edge-spawned entities an initial inward push so they enter the arena
-    // immediately. Homing/fleeing enemies override velocity every frame anyway;
-    // wandering entities pick a direction on their first _wanderTimer tick, so
-    // this nudge carries them to a visible position before that fires.
-    if (edge && !behavior.movesTowardPlayer && !behavior.movesAwayFromPlayer) {
+    // Give edge-spawned entities an initial inward push
+    if (edge && !behavior.chasedBy && !behavior.isFleeing) {
       const speed = ent.params.speed ?? 80;
       const { vx, vy } = inwardVelocity(edge, speed * 0.7);
       body.setVelocity(vx, vy);
     }
 
-    // Per-instance state
-    rect._patrolDir = Math.random() > 0.5 ? 1 : -1;
-    rect._patrolMinX = Math.max(size / 2, x - 120);
-    rect._patrolMaxX = Math.min(CANVAS_W - size / 2, x + 120);
+    rect._patrolDir    = Math.random() > 0.5 ? 1 : -1;
+    rect._patrolMinX   = Math.max(size / 2, x - 120);
+    rect._patrolMaxX   = Math.min(CANVAS_W - size / 2, x + 120);
     rect._currentSpeed = ent.params.speed ?? 80;
-    rect._wanderTimer = 1.5 + Math.random(); // seconds until first direction change
+    rect._wanderTimer  = 1.5 + Math.random();
 
     const label = this.add
       .text(x, y - size / 2 - 10, ent.displayName, {
@@ -387,11 +365,11 @@ class GameScene extends Phaser.Scene {
   // Collision handler
   // ---------------------------------------------------------------------------
 
-  private onEntityContact(entity: EnemyRect, behavior: ComponentBehavior) {
+  private onEntityContact(entity: EnemyRect, behavior: EntityBehavior) {
     if (this.gameOver) return;
 
-    // Damage player — gated by invincibility window
-    if (behavior.damagesPlayer && !this.invincible) {
+    // isDamagedBy: this entity damages the player on contact
+    if (behavior.isDamagedBy && !this.invincible) {
       this.health = Math.max(0, this.health - 1);
       this.hudHealth.setText(`HP: ${this.health}`);
       this.tweens.add({
@@ -406,22 +384,26 @@ class GameScene extends Phaser.Scene {
       if (this.health <= 0) this.triggerLose("You were defeated!");
     }
 
-    // Score
-    if (behavior.scoreOnContact) {
+    // isRemovedBy: this entity is removed on contact and player scores
+    if (behavior.isRemovedBy) {
       this.score++;
       this.hudScore.setText(`Score: ${this.score}`);
+      entity._label?.destroy();
+      entity.destroy();
+      this.deadEnemies++;
+      return; // entity is gone, skip further effects
     }
 
-    // Entity grows (NOT the player)
-    if (behavior.growsOnContact) {
+    // growsBy: this entity grows on contact with player
+    if (behavior.growsBy) {
       const newW = (entity.width as number) + 6;
       const newH = (entity.height as number) + 6;
       entity.setSize(newW, newH);
       (entity.body as Phaser.Physics.Arcade.Body).setSize(newW, newH);
     }
 
-    // Player shrinks
-    if (behavior.shrinksPlayerOnContact) {
+    // shrinksBy: player shrinks on contact
+    if (behavior.shrinksBy) {
       const minSize = 10;
       const newW = Math.max(minSize, (this.player.width as number) - 6);
       const newH = Math.max(minSize, (this.player.height as number) - 6);
@@ -429,30 +411,11 @@ class GameScene extends Phaser.Scene {
       (this.player.body as Phaser.Physics.Arcade.Body).setSize(newW, newH);
     }
 
-    // Knockback
-    if (behavior.pushesPlayerOnContact) {
-      const dx = this.player.x - entity.x;
-      const dy = this.player.y - entity.y;
-      const len = Math.sqrt(dx * dx + dy * dy) || 1;
-      const knockback = 350;
-      (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(
-        (dx / len) * knockback,
-        (dy / len) * knockback
-      );
-    }
-
-    // Freeze player
-    if (behavior.freezesPlayerOnContact && !this.playerFrozen) {
+    // stopsBy: this entity freezes itself on contact
+    if (behavior.stopsBy && !this.playerFrozen) {
       this.playerFrozen = true;
       (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
       this.time.delayedCall(1200, () => { this.playerFrozen = false; });
-    }
-
-    // Remove entity
-    if (behavior.removeOnContact) {
-      entity._label?.destroy();
-      entity.destroy();
-      this.deadEnemies++;
     }
   }
 
@@ -521,17 +484,17 @@ class GameScene extends Phaser.Scene {
     if (this.playerFrozen) {
       body.setVelocity(0, 0);
     } else {
-      const left = this.cursors.left.isDown || this.wasdKeys.left.isDown;
+      const left  = this.cursors.left.isDown  || this.wasdKeys.left.isDown;
       const right = this.cursors.right.isDown || this.wasdKeys.right.isDown;
-      const up = this.cursors.up.isDown || this.wasdKeys.up.isDown;
-      const down = this.cursors.down.isDown || this.wasdKeys.down.isDown;
+      const up    = this.cursors.up.isDown    || this.wasdKeys.up.isDown;
+      const down  = this.cursors.down.isDown  || this.wasdKeys.down.isDown;
 
       let vx = 0;
       let vy = 0;
-      if (left) vx -= speed;
+      if (left)  vx -= speed;
       if (right) vx += speed;
-      if (up) vy -= speed;
-      if (down) vy += speed;
+      if (up)    vy -= speed;
+      if (down)  vy += speed;
 
       if (vx !== 0 && vy !== 0) {
         const f = 1 / Math.SQRT2;
@@ -550,39 +513,30 @@ class GameScene extends Phaser.Scene {
         const enemy = child as EnemyRect;
         if (!enemy.active) return;
         const eb = enemy.body as Phaser.Physics.Arcade.Body;
-
-        // Accelerate over time — increase stored speed each second
-        if (behavior.acceleratesOverTime) {
-          enemy._currentSpeed = Math.min(enemy._currentSpeed + (5 * delta / 1000), 400);
-        }
         const entSpeed = enemy._currentSpeed;
 
-        // Movement (priority order: chase > flee > patrol > wander)
-        if (behavior.movesTowardPlayer) {
+        // Movement — derived directly from behavior attributes
+        // chasedBy: another entity chases the player, so this entity homes in
+        // isFleeing: this entity flees
+        // movesAnyWay but not static/fleeing/chasedBy → wander randomly
+        if (behavior.chasedBy) {
+          // This entity is marked as "chasing" the player (it has chasedBy interactions
+          // meaning it IS the one doing the chasing)
           this.physics.moveToObject(enemy, this.player, entSpeed);
-
-        } else if (behavior.movesAwayFromPlayer) {
+        } else if (behavior.isFleeing) {
           const dx = enemy.x - this.player.x;
           const dy = enemy.y - this.player.y;
           const len = Math.sqrt(dx * dx + dy * dy) || 1;
           eb.setVelocity((dx / len) * entSpeed, (dy / len) * entSpeed);
-
-        } else if (behavior.patrolsBackAndForth) {
-          // Reverse direction at patrol bounds
-          if (
-            (enemy._patrolDir > 0 && enemy.x >= enemy._patrolMaxX) ||
-            (enemy._patrolDir < 0 && enemy.x <= enemy._patrolMinX)
-          ) {
-            enemy._patrolDir *= -1;
-          }
-          eb.setVelocity(enemy._patrolDir * entSpeed, 0);
-
-        } else if (behavior.wandersRandomly) {
-          // Timer-based direction change (every 1.5–2.5 seconds)
+        } else if (behavior.movesAnyWay) {
+          // Default: wander randomly (timer-based direction change)
           enemy._wanderTimer -= delta / 1000;
           if (enemy._wanderTimer <= 0) {
             const angle = Math.random() * Math.PI * 2;
-            eb.setVelocity(Math.cos(angle) * entSpeed * 0.6, Math.sin(angle) * entSpeed * 0.6);
+            eb.setVelocity(
+              Math.cos(angle) * entSpeed * 0.6,
+              Math.sin(angle) * entSpeed * 0.6
+            );
             enemy._wanderTimer = 1.5 + Math.random();
           }
         }
@@ -628,7 +582,6 @@ class GameScene extends Phaser.Scene {
     } else if (!this.playerFrozen) {
       this.player.setAlpha(1);
     } else {
-      // Frozen: pulse blue tint effect via alpha
       this.player.setAlpha(0.6);
     }
 
@@ -652,7 +605,10 @@ class GameScene extends Phaser.Scene {
       if (remaining === 0 && this.totalEnemies > 0) this.triggerWin("All enemies eliminated!");
     }
 
-    if (loseCondition.recipe === "Run Out Of Time" || loseCondition.recipe === "Health Depletion") {
+    if (
+      loseCondition.recipe === "Run Out Of Time" ||
+      loseCondition.recipe === "Health Depletion"
+    ) {
       const timerSecs = loseCondition.timerSeconds;
       if (timerSecs !== undefined && this.surviveTimer >= timerSecs) {
         this.triggerLose("Time ran out!");

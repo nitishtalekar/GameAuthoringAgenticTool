@@ -4,7 +4,7 @@ import { useState, useCallback } from "react";
 import dynamic from "next/dynamic";
 import type { ParsedGame } from "@/lib/game/xml-parser";
 import { parseGameXml } from "@/lib/game/xml-parser";
-import { mergeBehaviors, getBehavior } from "@/data/component-behaviors";
+import { buildBehavior, interactionColor, interactionDescription } from "@/data/component-behaviors";
 
 // GameCanvas imports Phaser at module level — must never be server-rendered
 const GameCanvas = dynamic(() => import("./GameCanvas"), { ssr: false });
@@ -121,10 +121,13 @@ function GameInfoPanel({ game }: { game: ParsedGame }) {
 
           {/* Enemies */}
           {enemies.map((ent) => {
-            const relComponents = game.relations
-              .filter((r) => r.from === ent.name)
-              .map((r) => r.component);
-            const behavior = mergeBehaviors([...ent.components, ...relComponents]);
+            const actorAttrs = game.interactions
+              .filter((i) => i.actor === ent.name)
+              .map((i) => i.attribute);
+            const behavior = buildBehavior(
+              ent.behavior as unknown as Record<string, boolean | string | null>,
+              actorAttrs
+            );
             return (
               <span
                 key={ent.name}
@@ -202,10 +205,13 @@ function GameStructurePanel({ game }: { game: ParsedGame }) {
             </h4>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {game.entities.map((ent) => {
-                const relComponents = game.relations
-                  .filter((r) => r.from === ent.name)
-                  .map((r) => r.component);
-                const dominant = mergeBehaviors([...ent.components, ...relComponents]);
+                const actorAttrs = game.interactions
+                  .filter((i) => i.actor === ent.name)
+                  .map((i) => i.attribute);
+                const dominant = buildBehavior(
+                  ent.behavior as unknown as Record<string, boolean | string | null>,
+                  actorAttrs
+                );
                 return (
                   <div
                     key={ent.name}
@@ -247,31 +253,40 @@ function GameStructurePanel({ game }: { game: ParsedGame }) {
                       )}
                     </div>
 
-                    {/* Component chips */}
-                    {ent.components.length > 0 && (
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
-                        {ent.components.map((comp) => {
-                          const beh = getBehavior(comp);
-                          return (
-                            <span
-                              key={comp}
-                              title={beh.description}
-                              style={{
-                                padding: "2px 8px",
-                                background: hexToCss(beh.color) + "22",
-                                border: `1px solid ${hexToCss(beh.color)}66`,
-                                color: "#1a1a2e",
-                                borderRadius: 10,
-                                fontSize: 11,
-                                fontFamily: "monospace",
-                              }}
-                            >
-                              {comp}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    )}
+                    {/* Behavior + interaction attribute chips */}
+                    {(() => {
+                      const behaviorKeys = (
+                        ["isStatic", "movesAnyWay", "isFleeing", "growsOverTime", "shrinksOverTime"] as const
+                      ).filter((k) => ent.behavior[k] === true);
+                      const iAttrs = game.interactions
+                        .filter((i) => i.actor === ent.name)
+                        .map((i) => i.attribute);
+                      const chips = [...behaviorKeys, ...iAttrs];
+                      return chips.length > 0 ? (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
+                          {chips.map((chip) => {
+                            const color = interactionColor(chip);
+                            return (
+                              <span
+                                key={chip}
+                                title={interactionDescription(chip)}
+                                style={{
+                                  padding: "2px 8px",
+                                  background: hexToCss(color) + "22",
+                                  border: `1px solid ${hexToCss(color)}66`,
+                                  color: "#1a1a2e",
+                                  borderRadius: 10,
+                                  fontSize: 11,
+                                  fontFamily: "monospace",
+                                }}
+                              >
+                                {chip}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      ) : null;
+                    })()}
 
                     {/* Params */}
                     <div style={{ display: "flex", gap: 12, color: "#6b7280", fontSize: 12 }}>
@@ -287,16 +302,16 @@ function GameStructurePanel({ game }: { game: ParsedGame }) {
             </div>
           </div>
 
-          {/* Relations */}
-          {game.relations.length > 0 && (
+          {/* Interactions */}
+          {game.interactions.length > 0 && (
             <div>
               <h4 style={{ margin: "0 0 10px", fontSize: 13, color: "#6b7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                Relations
+                Interactions
               </h4>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                 <thead>
                   <tr style={{ background: "#f3f4f6" }}>
-                    {["From", "Verb", "To", "Micro-Rhetoric", "Component"].map((h) => (
+                    {["Actor", "Target", "Attribute"].map((h) => (
                       <th
                         key={h}
                         style={{
@@ -313,34 +328,33 @@ function GameStructurePanel({ game }: { game: ParsedGame }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {game.relations.map((rel, i) => {
-                    const beh = getBehavior(rel.component);
+                  {game.interactions.map((rel, i) => {
+                    const color = interactionColor(rel.attribute);
+                    const desc  = interactionDescription(rel.attribute);
                     return (
                       <tr
                         key={i}
                         style={{ borderBottom: "1px solid #f3f4f6", background: i % 2 === 0 ? "#fff" : "#fafafa" }}
                       >
                         <td style={{ padding: "6px 10px", fontWeight: 500 }}>
-                          {game.entities.find((e) => e.name === rel.from)?.displayName ?? rel.from}
+                          {game.entities.find((e) => e.name === rel.actor)?.displayName ?? rel.actor}
                         </td>
-                        <td style={{ padding: "6px 10px", color: "#6b7280", fontStyle: "italic" }}>{rel.verb}</td>
                         <td style={{ padding: "6px 10px", fontWeight: 500 }}>
-                          {game.entities.find((e) => e.name === rel.to)?.displayName ?? rel.to}
+                          {game.entities.find((e) => e.name === rel.target)?.displayName ?? rel.target}
                         </td>
-                        <td style={{ padding: "6px 10px", color: "#6b7280" }}>{rel.microRhetoric}</td>
                         <td style={{ padding: "6px 10px" }}>
                           <span
-                            title={beh.description}
+                            title={desc}
                             style={{
                               padding: "2px 7px",
-                              background: hexToCss(beh.color) + "22",
-                              border: `1px solid ${hexToCss(beh.color)}66`,
+                              background: hexToCss(color) + "22",
+                              border: `1px solid ${hexToCss(color)}66`,
                               borderRadius: 10,
                               fontSize: 11,
                               fontFamily: "monospace",
                             }}
                           >
-                            {rel.component}
+                            {rel.attribute}
                           </span>
                         </td>
                       </tr>
