@@ -121,12 +121,16 @@ function GameInfoPanel({ game }: { game: ParsedGame }) {
 
           {/* Enemies */}
           {enemies.map((ent) => {
-            const actorAttrs = game.interactions
+            const asTargetAttrs = game.interactions
+              .filter((i) => i.target === ent.name)
+              .map((i) => i.attribute);
+            const asActorAttrs = game.interactions
               .filter((i) => i.actor === ent.name)
               .map((i) => i.attribute);
             const behavior = buildBehavior(
               ent.behavior as unknown as Record<string, boolean | string | null>,
-              actorAttrs
+              asTargetAttrs,
+              asActorAttrs
             );
             return (
               <span
@@ -205,12 +209,16 @@ function GameStructurePanel({ game }: { game: ParsedGame }) {
             </h4>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {game.entities.map((ent) => {
-                const actorAttrs = game.interactions
+                const asTargetAttrs = game.interactions
+                  .filter((i) => i.target === ent.name)
+                  .map((i) => i.attribute);
+                const asActorAttrs = game.interactions
                   .filter((i) => i.actor === ent.name)
                   .map((i) => i.attribute);
                 const dominant = buildBehavior(
                   ent.behavior as unknown as Record<string, boolean | string | null>,
-                  actorAttrs
+                  asTargetAttrs,
+                  asActorAttrs
                 );
                 return (
                   <div
@@ -259,7 +267,7 @@ function GameStructurePanel({ game }: { game: ParsedGame }) {
                         ["isStatic", "movesAnyWay", "isFleeing", "growsOverTime", "shrinksOverTime"] as const
                       ).filter((k) => ent.behavior[k] === true);
                       const iAttrs = game.interactions
-                        .filter((i) => i.actor === ent.name)
+                        .filter((i) => i.actor === ent.name || i.target === ent.name)
                         .map((i) => i.attribute);
                       const chips = [...behaviorKeys, ...iAttrs];
                       return chips.length > 0 ? (

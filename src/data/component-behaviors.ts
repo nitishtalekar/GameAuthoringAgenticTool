@@ -47,7 +47,7 @@ export interface EntityBehavior {
 // These describe what a SINGLE attribute being true means for rendering/AI.
 
 export const BEHAVIOR_ATTRIBUTE_META: Record<string, { color: number; description: string }> = {
-  isStatic:       { color: 0x7f8c8d, description: "Never moves — acts as an immovable obstacle" },
+  isStatic:       { color: 0x7f8c8d, description: "Never moves — position is fixed" },
   movesAnyWay:    { color: 0x9b59b6, description: "Moves around the arena (chasing, wandering, or player-controlled)" },
   isFleeing:      { color: 0xf39c12, description: "Flees — moves directly away from the player" },
   growsOverTime:  { color: 0x27ae60, description: "Grows continuously over time" },
@@ -82,17 +82,29 @@ const ATTRIBUTE_PRIORITY: string[] = [
 
 /**
  * Builds an EntityBehavior from a parsed entity's behavior attributes map
- * plus the set of interaction attribute names that apply to this entity.
+ * plus the interaction attribute names that apply to this entity.
  *
- * @param behaviorAttrs  — key/value pairs from <behavior> element (booleans + entity-refs)
- * @param interactionAttrs — interaction attribute names where this entity is the actor
- *                          (e.g. ["isRemovedBy", "growsBy"])
+ * Attribute ownership rules (which entity "owns" the flag):
+ *   isRemovedBy  → TARGET owns it  (Deer isRemovedBy Lion  → Deer.isRemovedBy = true)
+ *   isDamagedBy  → TARGET owns it  (Player isDamagedBy Enemy → Player.isDamagedBy = true)
+ *   chasedBy     → TARGET owns it  (Deer chasedBy Lion → Deer.chasedBy = true; Lion gets homing)
+ *   stopsBy      → TARGET owns it  (Entity stopsBy Wall → Entity's velocity is zeroed on contact)
+ *   growsBy      → ACTOR owns it   (actor="Entity" growsBy → Entity grows on contact)
+ *   shrinksBy    → ACTOR owns it   (actor="Entity" shrinksBy → player shrinks on contact)
+ *
+ * @param behaviorAttrs  — key/value pairs from <behavior> element
+ * @param asTargetAttrs  — attribute names where this entity is the TARGET
+ *                         (e.g. Deer in actor="Lion" target="Deer" attribute="isRemovedBy")
+ * @param asActorAttrs   — attribute names where this entity is the ACTOR
+ *                         (e.g. Entity in actor="Entity" target="Player" attribute="growsBy")
  */
 export function buildBehavior(
   behaviorAttrs: Record<string, boolean | string | null>,
-  interactionAttrs: string[]
+  asTargetAttrs: string[],
+  asActorAttrs: string[] = []
 ): EntityBehavior {
-  const iAttrSet = new Set(interactionAttrs.map((a) => a.toLowerCase()));
+  const targetSet = new Set(asTargetAttrs.map((a) => a.toLowerCase()));
+  const actorSet  = new Set(asActorAttrs.map((a) => a.toLowerCase()));
 
   const behavior: EntityBehavior = {
     color: 0x9b59b6,
@@ -102,12 +114,14 @@ export function buildBehavior(
     isFleeing:       behaviorAttrs["isFleeing"]       === true,
     growsOverTime:   behaviorAttrs["growsOverTime"]   === true,
     shrinksOverTime: behaviorAttrs["shrinksOverTime"] === true,
-    isRemovedBy:     iAttrSet.has("isremovedby"),
-    growsBy:         iAttrSet.has("growsby"),
-    shrinksBy:       iAttrSet.has("shrinksby"),
-    stopsBy:         iAttrSet.has("stopsby"),
-    isDamagedBy:     iAttrSet.has("isdamagedby"),
-    chasedBy:        iAttrSet.has("chasedby"),
+    // target-owned: this entity IS the one receiving these effects
+    isRemovedBy: targetSet.has("isremovedby"),
+    isDamagedBy: targetSet.has("isdamagedby"),
+    chasedBy:    targetSet.has("chasedby"),
+    stopsBy:     targetSet.has("stopsby"),
+    // actor-owned: this entity IS the one applying these effects
+    growsBy:   actorSet.has("growsby"),
+    shrinksBy: actorSet.has("shrinksby"),
   };
 
   // Pick dominant color/description

@@ -25,6 +25,8 @@ type EnemyRect = Phaser.GameObjects.Rectangle & {
   _currentSpeed: number;
   /** Wanderer: seconds until next direction change */
   _wanderTimer: number;
+  /** True while this entity is frozen by a stopsBy interaction */
+  _frozen?: boolean;
 };
 
 // ---------------------------------------------------------------------------
@@ -190,14 +192,19 @@ class GameScene extends Phaser.Scene {
     entities
       .filter((e) => !e.isPlayer)
       .forEach((ent) => {
-        // Collect interaction attribute names where this entity is the actor
-        const actorAttrs = interactions
+        // target-owned: interactions where this entity receives the effect
+        const asTargetAttrs = interactions
+          .filter((i) => i.target === ent.name)
+          .map((i) => i.attribute);
+        // actor-owned: interactions where this entity applies the effect
+        const asActorAttrs = interactions
           .filter((i) => i.actor === ent.name)
           .map((i) => i.attribute);
 
         const behavior = buildBehavior(
           ent.behavior as unknown as Record<string, boolean | string | null>,
-          actorAttrs
+          asTargetAttrs,
+          asActorAttrs
         );
 
         if (behavior.isStatic) {
@@ -411,11 +418,11 @@ class GameScene extends Phaser.Scene {
       (this.player.body as Phaser.Physics.Arcade.Body).setSize(newW, newH);
     }
 
-    // stopsBy: this entity freezes itself on contact
-    if (behavior.stopsBy && !this.playerFrozen) {
-      this.playerFrozen = true;
-      (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
-      this.time.delayedCall(1200, () => { this.playerFrozen = false; });
+    // stopsBy: this entity's own velocity is zeroed for 1.2 s on contact
+    if (behavior.stopsBy && !entity._frozen) {
+      entity._frozen = true;
+      (entity.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
+      this.time.delayedCall(1200, () => { entity._frozen = false; });
     }
   }
 
@@ -515,11 +522,10 @@ class GameScene extends Phaser.Scene {
         const eb = enemy.body as Phaser.Physics.Arcade.Body;
         const entSpeed = enemy._currentSpeed;
 
-        // Movement — derived directly from behavior attributes
-        // chasedBy: another entity chases the player, so this entity homes in
-        // isFleeing: this entity flees
-        // movesAnyWay but not static/fleeing/chasedBy → wander randomly
-        if (behavior.chasedBy) {
+        // Movement — skip while frozen by a stopsBy interaction
+        if (enemy._frozen) {
+          eb.setVelocity(0, 0);
+        } else if (behavior.chasedBy) {
           // This entity is marked as "chasing" the player (it has chasedBy interactions
           // meaning it IS the one doing the chasing)
           this.physics.moveToObject(enemy, this.player, entSpeed);
