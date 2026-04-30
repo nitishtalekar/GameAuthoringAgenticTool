@@ -82,17 +82,21 @@
     {
       "id": "survived",
       "type": "timer_elapsed",
-      "seconds": 60,
+      "properties": {
+        "seconds": 60
+      },
       "result": "won",
       "message": "You Survived!"
     },
     {
       "id": "too_small",
       "type": "entity_property_threshold",
-      "entity": "man",
-      "property": "size",
-      "operator": "<=",
-      "value": 16,
+      "properties": {
+        "entity": "man",
+        "property": "size",
+        "operator": "<=",
+        "value": 16
+      },
       "result": "lost",
       "message": "Man Got Too Small!"
     }

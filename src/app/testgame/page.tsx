@@ -119,7 +119,7 @@ export default function Page() {
   const playerBehavior = CONFIG.behaviors.find((b) => b.type === "player_controlled")!;
   const playerDef = CONFIG.entities.find((e) => e.id === playerBehavior.entity)!;
   const winTimer = CONFIG.endConditions.find((w) => w.type === "timer_elapsed")!;
-  const WIN_TIME = winTimer.seconds as number;
+  const WIN_TIME = (winTimer.properties as { seconds: number }).seconds;
   const MAX_SIZE = playerDef.maxSize as number;
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -318,11 +318,12 @@ export default function Page() {
             setStatus(cond.result as "won" | "lost");
           }
           if (cond.type === "entity_property_threshold") {
-            const target = states[(cond as { entity: string }).entity]?.[0];
+            const p = cond.properties as { entity: string; property: string; operator: string; value: number };
+            const target = states[p.entity]?.[0];
             if (target) {
-              const val = target[(cond as { property: string }).property as keyof EntityState] as number;
-              const threshold = (cond as { value: number }).value;
-              const op = (cond as { operator: string }).operator;
+              const val = target[p.property as keyof EntityState] as number;
+              const threshold = p.value;
+              const op = p.operator;
               const triggered =
                 op === "<=" ? val <= threshold :
                 op === "<"  ? val < threshold :
