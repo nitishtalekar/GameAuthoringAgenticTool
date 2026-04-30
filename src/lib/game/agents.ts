@@ -2,104 +2,53 @@ import { createOpenAIModel } from "@/lib/models";
 import { buildAgentNode } from "@/lib/agent";
 import type { NodeFunction } from "@/lib/types";
 import {
-  formatMicroRhetoricsForPrompt,
   formatBehaviorRhetoricsForPrompt,
   formatInteractionRhetoricsForPrompt,
 } from "@/data/micro-rhetorics";
-import { formatWinRecipesForPrompt, formatLoseRecipesForPrompt, formatRecipesForPrompt } from "@/data/recipes";
+import { formatWinRecipesForPrompt, formatLoseRecipesForPrompt } from "@/data/recipes";
 
 /**
- * News → Concept Map Agent
+ * Step 1 — Concept Extraction Agent
  *
- * Takes a raw news article (or any freeform text) and distills it into a
- * compact, structured concept map: 2–6 subject-verb-object sentences that
- * capture the key relationships described in the article.
+ * Takes a raw news article (or any freeform text) and produces:
+ * - 2–6 plain-English concept sentences (SVO form)
+ * - a deduplicated list of entity names
+ * - a structured list of subject-verb-object relations
  */
-export function buildNewsToConceptAgent(): NodeFunction {
+export function buildConceptExtractionAgent(): NodeFunction {
   const llm = createOpenAIModel({ temperature: 0.2 });
 
-  const systemPrompt = `You are a concept-map extraction agent for the Game-Authoring-Tool system.
-Your task is to read a news article (or any descriptive text) and distill it into a compact concept map expressed as plain English sentences.
+  const systemPrompt = `You are a concept-extraction agent for the Game-Authoring-Tool system.
+Your task is to read a news article (or any descriptive text) and distill it into a structured concept map.
 
 RULES:
-- Output ONLY 2–6 short subject-verb-object sentences, one per line.
+- Produce 2–6 short subject-verb-object concept sentences, one per line, that capture the key relationships.
 - Each sentence must follow the pattern: "Subject verb Object." (e.g. "Police arrests Occupier.")
-- Use simple present-tense verbs.
-- Entity names must be proper nouns or capitalised common nouns (e.g. "Police", "WallStreet", "Occupier").
-- Capture only the most important relationships from the text — omit details, adjectives, and commentary.
-- Do NOT output any prose, explanation, numbering, or markdown — only the sentences.
+- Use simple present-tense verbs. Capitalize entity names (e.g. "Police", "WallStreet", "Occupier").
+- Entities must be 2–6 unique proper nouns or capitalised common nouns.
+- All entities that appear in relations must be in the entities list.
+- Extract only the most important relationships; omit commentary, adjectives, and details.
+
+OUTPUT: Respond ONLY with valid JSON — no prose, no markdown fences, no extra text:
+{
+  "conceptSentences": ["Subject verb Object.", "..."],
+  "entities": ["EntityName", "..."],
+  "relations": [
+    { "subject": "string", "verb": "string", "object": "string" }
+  ]
+}
 
 EXAMPLE INPUT:
 On the six month anniversary of the Occupy Wall Street movement, protesters returned to New York's Zuccotti Park and several were arrested. The occupiers are obstructing Wall Street and are being arrested by police, but Wall Street is also growing the occupy movement.
 
 EXAMPLE OUTPUT:
-Police arrests Occupier. Occupier obstructs WallStreet. WallStreet grows Occupier.`;
-
-  return buildAgentNode(llm, { systemPrompt });
-}
-
-/**
- * Authoring Agent
- *
- * Converts natural language concept map descriptions into a structured
- * ConceptGraph with entities and relations.
- */
-export function buildAuthoringAgent(): NodeFunction {
-  const llm = createOpenAIModel({ temperature: 0.2 });
-
-  const systemPrompt = `You are a structured concept-map extraction agent for the Game-Authoring-Tool system.
-Your sole task is to parse a natural language description and extract entities (nouns) and relations (subject-verb-object triples).
-
-RULES:
-- Relations must be binary (exactly two nouns per relation)
-- Use simple present-tense verbs
-- Extract 2–6 entities maximum
-- All entities mentioned in relations must appear in the entities list
-- confidence is a float 0.0–1.0 reflecting your certainty in the extraction
-
-OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no markdown fences, no extra text:
 {
-  "entities": ["string"],
+  "conceptSentences": ["Police arrests Occupier.", "Occupier obstructs WallStreet.", "WallStreet grows Occupier."],
+  "entities": ["Police", "Occupier", "WallStreet"],
   "relations": [
-    { "subject": "string", "verb": "string", "object": "string" }
-  ],
-  "confidence": 0.0
-}`;
-
-  return buildAgentNode(llm, { systemPrompt });
-}
-
-/**
- * Micro-Rhetoric Selection Agent
- *
- * Maps each verb relation in the concept graph to the most appropriate
- * micro-rhetoric from the static library.
- */
-export function buildMicroRhetoricAgent(): NodeFunction {
-  const llm = createOpenAIModel({ temperature: 0.3 });
-  const library = formatMicroRhetoricsForPrompt();
-
-  const systemPrompt = `You are a micro-rhetoric selection agent for the Game-Authoring-Tool system.
-For each verb relation in the concept graph, select the most appropriate micro-rhetoric from the library below.
-
-MICRO-RHETORIC LIBRARY:
-${library}
-
-RULES:
-- Pick exactly one micro-rhetoric per relation
-- Selection must be a name that exists in the library above
-- The component field must be copied exactly from the library entry you selected
-- Provide a one-sentence justification grounded in the verb's semantic meaning
-
-OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no markdown fences, no extra text:
-{
-  "selections": [
-    {
-      "relation": "Subject verb Object",
-      "micro_rhetoric": "Name from library",
-      "component": "ComponentName",
-      "justification": "one sentence"
-    }
+    { "subject": "Police", "verb": "arrests", "object": "Occupier" },
+    { "subject": "Occupier", "verb": "obstructs", "object": "WallStreet" },
+    { "subject": "WallStreet", "verb": "grows", "object": "Occupier" }
   ]
 }`;
 
@@ -107,94 +56,106 @@ OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no
 }
 
 /**
- * Entity Attribute Agent
+ * Step 2 — Rhetoric Assignment Agent
  *
- * Reads the concept graph and micro-rhetoric selections, then assigns
- * values for every predefined attribute to every entity in the game.
- * Produces the EntityAttributeState used by downstream agents.
+ * Takes the structured concept data (entities + SVO relations) and assigns:
+ * - One behavior rhetoric per entity (from BEHAVIOR_RHETORICS)
+ * - One interaction rhetoric per SVO relation (from INTERACTION_RHETORICS)
+ * - Numeric parameters for each entity (speed, size, spawnRate, etc.)
+ * - Automatically selects which entity is the player based on concept semantics
  */
-export function buildEntityAttributeAgent(): NodeFunction {
-  const llm = createOpenAIModel({ temperature: 0.2 });
+export function buildRhetoricAssignmentAgent(): NodeFunction {
+  const llm = createOpenAIModel({ temperature: 0.3 });
   const behaviorList = formatBehaviorRhetoricsForPrompt();
   const interactionList = formatInteractionRhetoricsForPrompt();
 
-  const systemPrompt = `You are an entity attribute assignment agent for the Game-Authoring-Tool system.
-Given the original user concept, a concept graph, and micro-rhetoric selections, assign values for every predefined attribute to every entity.
+  const systemPrompt = `You are a rhetoric assignment agent for the Game-Authoring-Tool system.
+Given a concept map (entities + SVO relations), assign one behavior rhetoric to each entity and one interaction rhetoric to each SVO relation.
 
-AVAILABLE BEHAVIOR TYPES (single-entity):
+AVAILABLE BEHAVIOR RHETORICS (assign exactly one per entity):
 ${behaviorList}
 
-AVAILABLE INTERACTION TYPES (two-entity collision effects):
+AVAILABLE INTERACTION RHETORICS (assign exactly one per SVO relation):
 ${interactionList}
 
-ASSIGNMENT RULES:
-1. Every entity must have an entry with ALL attributes above — omitting a key is invalid.
-2. boolean attributes: set to true or false only. Do not use strings or null.
-3. entity-ref attributes: set to the exact name of another entity as it appears in the entities list, or null if the relationship does not apply.
-4. Base your decisions PRIMARILY on the micro-rhetoric selections:
-   - GrowOverTimeComponent   → growsOverTime: true
-   - ShrinkOverTimeComponent → shrinksOverTime: true
-   - StaticObstacleComponent → isStatic: true, movesAnyWay: false
-   - Any movement component (HomingMovementComponent, FleeTargetComponent, RandomMovementComponent, PatrolBetweenPointsComponent, IncreaseSpeedOverTimeComponent) → movesAnyWay: true
-   - Player-controlled entity → isPlayer: true, movesAnyWay: true
-   - RemoveOnCollideComponent on subject S toward object O → O.isRemovedBy = "S"
-   - GrowOnCollideComponent on subject S toward object O  → S.growsBy = "O"
-   - ShrinkOnCollideComponent on subject S toward object O → S.shrinksBy = "O"
-   - StopMovementOnCollideComponent on subject S toward object O → O.stopsBy = "S"
-   - DamageOnCollideComponent on subject S toward object O → O.isDamagedBy = "S"
-   - HomingMovementComponent on subject S targeting object O → O.chasedBy = "S"
-   - FleeTargetComponent on subject S → S.isFleeing = true
-5. Use the concept graph relations as secondary evidence to confirm or resolve ambiguities in entity-ref attributes.
-6. Use the original user concept as the highest-level semantic guide — attributes must reflect the intended meaning of the concept, not just mechanical defaults.
-7. Exactly one entity should have isPlayer: true. If unclear, pick the entity the player would most naturally control.
-8. Do NOT set an attribute to true or a non-null entity ref unless it is clearly supported by a micro-rhetoric selection or the concept graph relation.
+BEHAVIOR ASSIGNMENT RULES:
+1. Exactly one entity must have isPlayer=true — choose the entity the reader most naturally identifies with or controls.
+2. The player entity must receive behaviorType="player_controlled".
+3. Entities that chase the player → behaviorType="chase", set target to the player entity name.
+4. Entities that grow autonomously → behaviorType="grow_over_time".
+5. Entities that appear periodically → behaviorType="spawn_on_timer".
+6. An entity may have BOTH a behavior (e.g. "chase") AND a spawn_on_timer behavior — list it twice in entityBehaviors if needed.
 
-NUMERIC PARAMETER RULES (assign for every entity):
-- speed (px/s): how fast the entity moves. Range 50–250. Player entities are typically slower (80–150) for controllability. Fast enemies/projectiles 150–250. Static entities use 0.
-- size (px): visual/collision size. Range 16–64. Player ~32. Large obstacles ~48–64. Small collectibles/projectiles ~16–24.
-- spawnRate (per/s): how often new instances of this entity spawn. Range 0.5–5.0. Player is unique, use 0. Rare heavy enemies ~0.5–1.0. Frequent small enemies ~2.0–5.0.
-- Choose values that reflect the entity's role and the game concept — do NOT just use defaults.
+NUMERIC PARAMETER RULES — choose values that fit the entity's role:
+- speed (player): 200–260 px/s. Use "speed" field.
+- speedMin/speedMax (chasing enemies): 100–200 px/s range.
+- initialSize (player): 22–36 px. minSize: 8–16 px. maxSize: 60–90 px.
+- size (static/spawned entities): 14–36 px.
+- spawnIntervalMs: 1000–4000 ms. spawnMax: 2–8.
+- growRate (grow_over_time): 1.0–3.0 px/s.
+- clampToCanvas: true for the player entity, false for enemies.
 
-OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no markdown fences, no extra text:
+INTERACTION ASSIGNMENT RULES:
+- Match the SVO verb semantics to the closest interaction rhetoric.
+- entityA is the subject of the relation (the actor), entityB is the object.
+- For "damage_on_item" interactions, include item (inventory item name) and amount=1.
+- If a verb is ambiguous, prefer the simpler interaction (e.g. "consume" over "collect").
+
+OUTPUT: Respond ONLY with valid JSON — no prose, no markdown fences, no extra text:
 {
-  "entityAttributeState": {
-    "EntityName": {
+  "entityBehaviors": [
+    {
+      "entity": "string",
+      "isPlayer": true,
+      "behaviorType": "player_controlled",
+      "speed": 230,
+      "initialSize": 22,
+      "minSize": 10,
+      "maxSize": 80,
+      "clampToCanvas": true
+    },
+    {
+      "entity": "string",
       "isPlayer": false,
-      "isStatic": false,
-      "movesAnyWay": false,
-      "growsOverTime": false,
-      "shrinksOverTime": false,
-      "isRemovedBy": null,
-      "growsBy": null,
-      "shrinksBy": null,
-      "stopsBy": null,
-      "isDamagedBy": null,
-      "chasedBy": null,
-      "isFleeing": false,
-      "speed": 100,
+      "behaviorType": "chase",
+      "target": "PlayerEntityName",
+      "speedMin": 140,
+      "speedMax": 185,
+      "size": 20,
+      "clampToCanvas": false
+    },
+    {
+      "entity": "string",
+      "isPlayer": false,
+      "behaviorType": "spawn_on_timer",
       "size": 32,
-      "spawnRate": 1.5
+      "spawnIntervalMs": 1800,
+      "spawnMax": 4
     }
-  }
+  ],
+  "entityInteractions": [
+    { "entityA": "string", "entityB": "string", "interactionType": "consume" },
+    { "entityA": "string", "entityB": "string", "interactionType": "damage" }
+  ]
 }`;
 
   return buildAgentNode(llm, { systemPrompt });
 }
 
 /**
- * Recipe Selection Agent
+ * Step 3 — Recipe Selection Agent
  *
- * Selects win, lose, structure, and patch recipes based on the current
- * entity and component state.
+ * Selects at least one win recipe and at least one lose recipe.
+ * Can select multiple conditions; ANY ONE triggers the outcome.
  */
-export function buildRecipeAgent(): NodeFunction {
+export function buildRecipeSelectionAgent(): NodeFunction {
   const llm = createOpenAIModel({ temperature: 0.3 });
   const winRecipes = formatWinRecipesForPrompt();
   const loseRecipes = formatLoseRecipesForPrompt();
 
   const systemPrompt = `You are a recipe selection agent for the Game-Authoring-Tool system.
-Given the entity attribute state, select one win recipe and one lose recipe.
-Then produce a concrete win_condition and lose_condition that reference the actual entities and interaction types from the entity attribute state.
+Given the concept, entity behaviors, and entity interactions, select at least one win condition and at least one lose condition.
+You may select multiple win or lose conditions — any ONE firing ends the game.
 
 WIN RECIPES:
 ${winRecipes}
@@ -202,181 +163,102 @@ ${winRecipes}
 LOSE RECIPES:
 ${loseRecipes}
 
+END CONDITION TYPES AND FIELDS:
+- "entity_property_threshold": { entity, property ("size"), operator (">="|"<="), value (number) }
+- "entity_count_threshold": { entity, operator ("<="), value (number) } — use for counting alive instances
+- "timer_elapsed": { seconds (number) }
+
+RECIPE-TO-CONDITION MAPPING:
+- "Grow Beyond Size" → type="entity_property_threshold", property="size", operator=">=", value=player maxSize
+- "Neutralize Threat" → type="entity_property_threshold", property="size", operator="<=", value=0 (on threat entity)
+- "Protect All Assets" → type="entity_count_threshold", operator="<=", value=0 (on protected entity), result=lost
+- "Survive Duration" → type="timer_elapsed", seconds=60 or 90
+- "Size Depleted" → type="entity_property_threshold", property="size", operator="<=", value=player minSize
+- "Timer Expired" → type="timer_elapsed", seconds=60 or 90
+- "Assets Destroyed" → type="entity_count_threshold", operator="<=", value=0 (on protected entity)
+- "Player Overwhelmed" → type="entity_property_threshold", property="size", operator="<=", value=player minSize
+
 RULES:
-- Select exactly one win_recipe and one lose_recipe
-- All selected names must come from the lists above exactly as written
-- Choose recipes that match the interaction types present in the entity config
+- Select at least one winCondition and at least one loseCondition.
+- Win and lose conditions must be for DIFFERENT events — they cannot both fire at the same game state.
+- Choose timer durations (60s or 90s) consistently — if a win uses 90s, a lose timer must differ.
+- message must be a short, thematically fitting outcome string (e.g. "The Movement Won!").
+- Each condition must have an "id" field: a short snake_case identifier (e.g. "movement_wins", "too_small").
 
-WIN_CONDITION AND LOSE_CONDITION RULES:
-- Both must be derived directly from the entityAttributeState passed in the user message
-- entity: must be an exact entity name from the entityAttributeState
-- interactionType: the interaction type driving the condition — "consume", "damage", or null for timer-based
-- value: a numeric threshold with unit suffix — size in pixels (e.g. "256px") for grow/shrink, seconds (e.g. "60s") for timers
-- description: a plain-English constraint string (e.g. "Player grows to 256px by consuming Food", "Player size drops below 10px", "Player survives for 60s")
-- Recipe-to-condition mapping:
-    • "Grow Beyond Size" (win): entity = player entity, interactionType = "consume", value = size threshold in pixels (e.g. "256px")
-    • "Survive Duration" (win): entity = player entity, interactionType = null, value = duration in seconds (e.g. "60s")
-    • "Size Depleted" (lose): entity = player entity, interactionType = "damage", value = minimum size threshold in pixels (e.g. "10px")
-    • "Timer Expired" (lose): entity = player entity, interactionType = null, value = timer duration in seconds (e.g. "60s")
-
-CRITICAL — WIN AND LOSE CONDITIONS MUST BE MUTUALLY EXCLUSIVE:
-The win and lose conditions must describe opposite outcomes. Verify before outputting that the win and lose events cannot both trigger for the same game state.
-
-OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no markdown fences, no extra text:
+OUTPUT: Respond ONLY with valid JSON — no prose, no markdown fences, no extra text:
 {
-  "win_recipe": "recipe name",
-  "lose_recipe": "recipe name",
-  "win_condition": {
-    "description": "Player grows to 256px by consuming Food",
-    "entity": "Player",
-    "interactionType": "consume",
-    "value": "256px"
-  },
-  "lose_condition": {
-    "description": "Player size drops below 10px",
-    "entity": "Player",
-    "interactionType": "damage",
-    "value": "10px"
-  },
-  "justifications": {
-    "win": "one sentence explaining which mechanic/entity triggers the win",
-    "lose": "one sentence explaining which mechanic/entity triggers the lose"
-  }
-}`;
-
-  return buildAgentNode(llm, { systemPrompt });
-}
-
-/**
- * Verifier / Repair Agent
- *
- * Verifies playability by checking entity attributes and win/lose conditions
- * against the original concept. Proposes and applies minimal repairs to
- * entityAttributeState and recipeSelection to ensure the game is playable.
- */
-export function buildVerifierAgent(): NodeFunction {
-  const llm = createOpenAIModel({ temperature: 0.1 });
-  const rhetoricLibrary = formatMicroRhetoricsForPrompt();
-
-  const systemPrompt = `You are a playability verifier and repair agent for the Game-Authoring-Tool system.
-You receive the original concept, entity attribute state, and recipe selection (win/lose conditions).
-Your job is to verify the game is playable and propose targeted repairs if not.
-
-ALLOWED REPAIR OPERATORS:
-- AlterAttribute: change an attribute value on an entity in entityAttributeState
-- AdjustParameter: change a numeric parameter on an entity (speed, size, spawnRate)
-- AssignPlayer: mark an entity as the player (sets isPlayer=true on that entity's attributes)
-
-AVAILABLE BEHAVIORS AND INTERACTIONS:
-${rhetoricLibrary}
-
-CONDITION VALUE TYPES — understand these before checking conditions:
-All condition values are numeric thresholds with a unit suffix — pixels (e.g. "256px") for size-based conditions, seconds (e.g. "60s") for timer-based conditions. These are runtime thresholds evaluated by the game engine. Always treat well-formed threshold values as valid.
-
-PLAYABILITY CHECKLIST — verify ALL of the following:
-1. Exactly one entity has isPlayer=true in entityAttributeState
-2. The player entity has a behavior of type "player_controlled"
-3. The win_condition.entity exists in entityAttributeState
-4. The win_condition.value is a valid threshold (ends with "px" or "s")
-5. The lose_condition.entity exists in entityAttributeState
-6. The lose_condition.value is a valid threshold (ends with "px" or "s")
-7. Win and lose conditions do not trigger for the same game event (they must be distinct)
-8. At least one non-player entity exists in the game
-9. Numeric parameters are within reasonable ranges for every entity:
-   - speed: 0–250 (0 for static; moving entities ≥ 50)
-   - size: 16–64
-   - spawnRate: 0–5.0 (0 for player; non-player entities ≥ 0.5)
-
-REPAIR RULES:
-- Propose ONLY the minimum repairs necessary
-- AlterAttribute repairs: set "attribute" to the key and "attributeValue" to the new value
-- AssignPlayer repairs: set "target" to the entity name
-- Win/lose condition repairs: use operator="AlterAttribute" with conditionField="win_condition" or "lose_condition" and conditionValue containing the full updated condition object
-
-If all checks pass, set isPlayable=true and return an empty repairs array.
-
-OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no markdown fences, no extra text:
-{
-  "isPlayable": true,
-  "issues": ["description of each issue found"],
-  "repairs": [
+  "winConditions": [
     {
-      "operator": "AlterAttribute",
-      "target": "EntityName",
-      "attribute": "attributeKey",
-      "attributeValue": true
-    },
-    {
-      "operator": "AssignPlayer",
-      "target": "EntityName"
-    },
-    {
-      "operator": "AlterAttribute",
-      "target": "win_condition",
-      "conditionField": "win_condition",
-      "conditionValue": {
-        "description": "Player grows to 256px",
-        "entity": "Player",
-        "interactionType": "consume",
-        "value": "256px"
-      }
-    },
-    {
-      "operator": "AdjustParameter",
-      "target": "EntityName",
-      "parameter": "speed",
-      "value": 150
+      "id": "string",
+      "recipe": "recipe name from WIN RECIPES",
+      "type": "entity_property_threshold",
+      "entity": "EntityName",
+      "property": "size",
+      "operator": ">=",
+      "value": 80,
+      "message": "string"
     }
   ],
-  "repairsSummary": "Plain-English summary of all repairs applied (or 'No repairs needed' if none)."
+  "loseConditions": [
+    {
+      "id": "string",
+      "recipe": "recipe name from LOSE RECIPES",
+      "type": "timer_elapsed",
+      "seconds": 90,
+      "message": "string"
+    },
+    {
+      "id": "string",
+      "recipe": "recipe name from LOSE RECIPES",
+      "type": "entity_property_threshold",
+      "entity": "EntityName",
+      "property": "size",
+      "operator": "<=",
+      "value": 10,
+      "message": "string"
+    }
+  ],
+  "justification": "one paragraph explaining why these conditions fit the concept"
 }`;
 
   return buildAgentNode(llm, { systemPrompt });
 }
 
 /**
- * Rhetoric Critic Agent
+ * Step 4 — Alignment Rating Agent
  *
- * Evaluates whether the final mechanics express the intended rhetorical
- * meaning from the original concept map.
+ * Evaluates how well the selected rhetorics and recipes express the original concept.
+ * Produces a numeric alignment score (0.0–1.0) and critique.
+ * Does NOT repair or alter any state.
  */
-export function buildRhetoricCriticAgent(): NodeFunction {
+export function buildAlignmentRatingAgent(): NodeFunction {
   const llm = createOpenAIModel({ temperature: 0.7 });
-  const recipeLibrary = formatRecipesForPrompt();
 
-  const systemPrompt = `You are a rhetoric critic agent for the Game-Authoring-Tool system.
-Compare the original concept graph (what the author intended) against the final game mechanics (what the game actually simulates via entityAttributeState and recipeSelection).
-Evaluate how well the gameplay mechanics express the intended rhetorical meaning.
+  const systemPrompt = `You are a rhetoric alignment critic for the Game-Authoring-Tool system.
+Compare the original concept (what the author intended) against the selected rhetorics and recipes (what the game will simulate).
+Evaluate how well the gameplay mechanics express the intended rhetorical meaning of the concept.
 
 SCORING:
-- alignment_score is a float between 0.0 and 1.0, inclusive.
-- Do NOT default to round numbers. Choose a precise, arbitrary value that reflects your nuanced assessment (e.g. 0.37, 0.61, 0.84).
+- alignmentScore is a float between 0.0 and 1.0, inclusive.
+- Do NOT use round numbers — choose a precise value (e.g. 0.37, 0.61, 0.84).
 - 0.0 = mechanics completely contradict the intended meaning
-- 0.5 = mechanics are neutral or loosely related to the concept
-- 1.0 = mechanics perfectly and clearly express the intended concept
-- Use the full range. Most games should score between 0.2 and 0.9.
+- 0.5 = mechanics are neutral or loosely related
+- 1.0 = mechanics perfectly express the intended concept
+- Most games should score between 0.2 and 0.9.
 
-INPUTS YOU WILL RECEIVE:
-- Original user concept (the intended rhetorical meaning)
-- Original concept graph: entities and subject-verb-object relations that define the intended message
-- entityAttributeState: per-entity attribute map reflecting the actual game mechanics
-- recipeSelection: win/lose/structure recipes and concrete conditions
+WHAT TO EVALUATE — ground every judgment in the concept's SVO relations:
+1. Does each SVO relation map to a matching interaction rhetoric? (e.g. "arrests" → damage, "grows" → consume)
+2. Do the win/lose conditions reflect the rhetorical arc the concept implies?
+3. Are entity behaviors (player, chase, spawn) consistent with the roles described in the concept?
+4. Does anything in the mechanics distort or contradict what the original text meant?
 
-WHAT TO EVALUATE — ground every judgment in the concept graph:
-1. For each relation in the concept graph (subject verb object), check whether the entityAttributeState encodes that relationship as a mechanical attribute (e.g. "A isRemovedBy B", "A isDamagedBy B"). Missing or inverted relationships are mismatches.
-2. Do the win/lose conditions match the rhetorical arc implied by the concept graph? (e.g. if the concept says "Player destroys Asteroid", the win condition should reflect removal of Asteroids by the Player.)
-3. Are there entity attributes set that have no corresponding relation in the concept graph? These dilute or distort the intended meaning.
-4. Does the overall game mechanic convey the same message the author intended with the original concept?
+mismatches: specific places where mechanics diverge from the concept. Critique only — do NOT suggest fixes.
+interpretation: a 1–2 paragraph summary of what the game currently expresses rhetorically, compared to the original concept.
 
-mismatches: specific places where mechanics contradict or miss the intended idea — critique only, do NOT suggest fixes.
-
-AVAILABLE RECIPES (for context):
-${recipeLibrary}
-
-OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no markdown fences, no extra text:
+OUTPUT: Respond ONLY with valid JSON — no prose, no markdown fences, no extra text:
 {
-  "alignment_score": 0.0,
-  "interpretation": "one to two paragraph summary of what the game currently expresses rhetorically",
+  "alignmentScore": 0.0,
+  "interpretation": "one to two paragraph summary",
   "mismatches": ["description of mismatch"]
 }`;
 
@@ -384,173 +266,126 @@ OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no
 }
 
 /**
- * Rhetoric Swap Agent
+ * Step 5 — Game JSON Generation Agent
  *
- * Applies suggested component swaps from the Rhetoric Critic to the entity
- * list, producing an updated EntitySpec[] with improved rhetorical alignment.
+ * Assembles the final game config JSON from all prior pipeline state.
+ * Output matches the game-config-samples/ schema exactly.
  */
-export function buildRhetoricSwapAgent(): NodeFunction {
+export function buildGameJsonAgent(): NodeFunction {
   const llm = createOpenAIModel({ temperature: 0.1 });
-  const componentLibrary = formatMicroRhetoricsForPrompt();
 
-  const systemPrompt = `You are a rhetoric swap agent for the Game-Authoring-Tool system.
-You are given a list of entities with their current components, and a list of suggested_swaps from the rhetoric critic.
-Apply each swap: for the specified entity, replace the component named in "replace" with the component named in "with".
-Only modify the components listed in the swaps. Preserve all other entity data (name, isPlayer, parameters) exactly as given.
+  const systemPrompt = `You are a game-config JSON generation agent for the Game-Authoring-Tool system.
+Convert the final game specification into a complete JSON config matching the schema below.
+Output ONLY the JSON object — no prose, no markdown fences, no comments.
 
-AVAILABLE COMPONENTS (the "with" values must be exact component names from this list):
-${componentLibrary}
-
-OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no markdown fences, no extra text:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SCHEMA REFERENCE (from occupy-wall-street.json example):
 {
+  "meta": {
+    "title": "Occupy Wall Street",
+    "instructions": "Move with WASD or arrow keys. Collect Wall Street money to grow. Avoid the Police. Grow big enough to win!",
+    "canvas": { "width": 900, "height": 600, "background": "#1a1a2e" }
+  },
   "entities": [
     {
-      "name": "string",
-      "isPlayer": true,
-      "components": ["string"],
-      "parameters": { "speed": 100, "size": 32, "spawnRate": 1.5 }
+      "id": "occupier",
+      "label": "OWS",
+      "color": "#f59e0b",
+      "initialSize": 22,
+      "minSize": 10,
+      "maxSize": 80,
+      "initialPosition": { "anchor": "center" },
+      "speed": 230
+    },
+    {
+      "id": "wallstreet",
+      "label": "$",
+      "color": "#22c55e",
+      "size": 32,
+      "initialPosition": { "anchor": "none" },
+      "speedMin": 0,
+      "speedMax": 0
+    },
+    {
+      "id": "police",
+      "label": "PD",
+      "color": "#3b82f6",
+      "size": 20,
+      "initialPosition": { "anchor": "none" },
+      "speedMin": 140,
+      "speedMax": 185
     }
-  ]
-}`;
-
-  return buildAgentNode(llm, { systemPrompt });
+  ],
+  "behaviors": [
+    { "entity": "occupier", "type": "player_controlled", "clampToCanvas": true },
+    { "entity": "police", "type": "chase", "clampToCanvas": false, "properties": { "target": "occupier" } },
+    { "entity": "wallstreet", "type": "spawn_on_timer", "properties": { "intervalMs": 1800, "max": 2, "spawnAt": { "anchor": "random_canvas", "margin": 30 }, "speedMin": 0, "speedMax": 0 } },
+    { "entity": "police", "type": "spawn_on_timer", "properties": { "intervalMs": 3500, "max": 6, "spawnAt": { "anchor": "random_edge", "offset": 30 }, "speedMin": 140, "speedMax": 185 } }
+  ],
+  "interactions": [
+    { "entityA": "occupier", "entityB": "wallstreet", "type": "consume" },
+    { "entityA": "occupier", "entityB": "police", "type": "damage" }
+  ],
+  "endConditions": [
+    { "id": "movement_wins", "type": "entity_property_threshold", "properties": { "entity": "occupier", "property": "size", "operator": ">=", "value": 80 }, "result": "won", "message": "The Movement Won!" },
+    { "id": "time_runs_out", "type": "timer_elapsed", "properties": { "seconds": 90 }, "result": "lost", "message": "The Movement Was Crushed." },
+    { "id": "too_small", "type": "entity_property_threshold", "properties": { "entity": "occupier", "property": "size", "operator": "<=", "value": 10 }, "result": "lost", "message": "The Movement Was Dispersed!" }
+  ],
+  "ui": {
+    "statusBars": [
+      { "label": "Movement", "source": "entity_size", "entity": "occupier", "color": "#f59e0b", "displayMode": "percent", "min": 10, "max": 80 },
+      { "label": "Time Left", "source": "timer_remaining", "color": "#ef4444", "displayMode": "seconds", "total": 90 }
+    ]
+  }
 }
-
-/**
- * XML Generation Agent
- *
- * Converts the fully verified and critiqued game specification into a
- * well-formed XML document following the Game-Authoring-Tool schema.
- */
-export function buildXmlGenerationAgent(): NodeFunction {
-  const llm = createOpenAIModel({ temperature: 0.1 });
-
-  const systemPrompt = `You are an XML generation agent for the Game-Authoring-Tool engine.
-Convert the final verified game specification into well-formed XML following the schema below.
-Output ONLY the XML document — no prose, no code fences, no markdown, no additional commentary.
-
-INPUTS YOU WILL RECEIVE:
-- Original user concept (the rhetorical meaning of the game)
-- entityAttributeState: map of entity name → attribute map (the sole source of truth for all entities and mechanics)
-- recipeSelection: win/lose/structure/patch recipes plus concrete win_condition and lose_condition objects
-- verifierReport: repairs that were applied (for audit trail only — do NOT re-apply them)
-- rhetoricCritique: alignment_score and interpretation (for metadata only)
-
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 1 — EMIT ENTITY BEHAVIORS
-For each entity in entityAttributeState, emit one <entity> element containing a self-closing <behavior> element.
-The <behavior> element carries every boolean and entity-ref attribute from that entity's attribute map directly as XML attributes.
-Include ALL of the following attributes on <behavior>, using the exact values from entityAttributeState:
 
-  isPlayer="{true|false}"
-  isStatic="{true|false}"
-  movesAnyWay="{true|false}"
-  growsOverTime="{true|false}"
-  shrinksOverTime="{true|false}"
-  isFleeing="{true|false}"
+GENERATION RULES:
 
-STEP 2 — DERIVE INTERACTIONS
-For each non-null entity-ref attribute across all entities, emit one <interaction> element.
-Map each attribute to its interaction type:
+META:
+- title: short name derived from the concept entities and theme
+- instructions: 1–2 sentences of player instruction reflecting the actual win/lose conditions
+- canvas.background: a dark hex color thematically appropriate for the concept
 
-  A.isRemovedBy = B  → <interaction actor="B" target="A" attribute="isRemovedBy" />
-  A.growsBy = B      → <interaction actor="A" target="B" attribute="growsBy" />
-  A.shrinksBy = B    → <interaction actor="A" target="B" attribute="shrinksBy" />
-  A.stopsBy = B      → <interaction actor="B" target="A" attribute="stopsBy" />
-  A.isDamagedBy = B  → <interaction actor="B" target="A" attribute="isDamagedBy" />
+ENTITIES:
+- id: lowercased entity name (e.g. "occupier")
+- label: 1–4 character abbreviation or symbol that fits the entity's theme
+- color: a vivid, thematically appropriate hex color — each entity must have a DISTINCT color
+- Player entity: use initialSize, minSize, maxSize, initialPosition.anchor="center", speed
+- Chase/spawn entities: use size, initialPosition.anchor="none", speedMin/speedMax
+- Static/grow entities: use initialSize, minSize, maxSize, initialPosition.anchor="fixed" with x/y coords
+- Include maxInventory if the entity uses "collect" interaction (e.g. { "water": 5 })
 
-STEP 3 — DERIVE WIN/LOSE CONDITIONS
-Map recipeSelection.win_condition and lose_condition to XML using these rules:
+BEHAVIORS:
+- player_controlled: { entity, type: "player_controlled", clampToCanvas: true }
+- chase: { entity, type: "chase", clampToCanvas: false, properties: { target: playerEntityId } }
+- spawn_on_timer (for spawned enemies): { entity, type: "spawn_on_timer", properties: { intervalMs, max, spawnAt: { anchor: "random_edge", offset: 30 }, speedMin, speedMax } }
+- spawn_on_timer (for collectibles): { entity, type: "spawn_on_timer", properties: { intervalMs, max, spawnAt: { anchor: "random_canvas", margin: 30 }, speedMin: 0, speedMax: 0 } }
+- grow_over_time: { entity, type: "grow_over_time", properties: { property: "size", rate: N, clampToMax: true } }
+- If an entity has BOTH chase and spawn_on_timer behaviors, emit BOTH behavior objects for that entity
 
-  win_condition.attribute = "isRemovedBy"
-    → <win recipe="{win_recipe}" trigger="score" threshold="10" entity="{win_condition.entity}" />
-  win_condition.attribute = "growsOverTime" OR "growsBy"
-    → <win recipe="{win_recipe}" trigger="size" threshold="{win_condition.value}" entity="{win_condition.entity}" />
-  win_condition.attribute = "movesAnyWay" AND value ends in "s"
-    → <win recipe="{win_recipe}" trigger="survive" duration="{win_condition.value}" entity="{win_condition.entity}" />
+INTERACTIONS:
+- { entityA, entityB, type } where type is the interactionType from the rhetoric assignment
+- For "damage_on_item": add options: { item: "itemName", amount: 1 }
 
-  lose_condition.attribute = "isDamagedBy"
-    → <lose recipe="{lose_recipe}" trigger="health" points="3" entity="{lose_condition.entity}" />
-  lose_condition.attribute = "isRemovedBy"
-    → <lose recipe="{lose_recipe}" trigger="eliminated" entity="{lose_condition.entity}" />
-  lose_condition.attribute = "movesAnyWay" AND value ends in "s"
-    → <lose recipe="{lose_recipe}" trigger="timeout" duration="{lose_condition.value}" entity="{lose_condition.entity}" />
+END CONDITIONS:
+- Emit all winConditions as result="won" and all loseConditions as result="lost"
+- entity_property_threshold: wrap threshold fields in "properties": { entity, property, operator, value }
+- entity_count_threshold: wrap in "properties": { entity, operator, value }
+- timer_elapsed: wrap in "properties": { seconds }
+- Each endCondition must have: id, type, properties, result, message
 
-STEP 4 — DERIVE LAYOUT
-For each non-player entity with spawnRate > 0, emit one <spawn> element.
-interval: compute as 1 / spawnRate, rounded to 1 decimal place, with unit "s".
+UI STATUS BARS:
+- For player entity size: { label, source: "entity_size", entity: playerId, color: playerColor, displayMode: "percent", min: playerMinSize, max: playerMaxSize }
+- For timers: { label: "Time Left", source: "timer_remaining", color: "#ef4444", displayMode: "seconds", total: timerSeconds }
+- For inventory: { label, source: "entity_inventory_item", entity, item, min: 0, max: maxInventoryValue }
+- For a threat entity size: { label, source: "entity_size", entity: threatId, color: threatColor, displayMode: "percent", min: 0, max: threatMaxSize }
+- Include status bars for all meaningful game metrics visible to the player
 
-Assign zone based on the structure_recipe selected AND the entity's attributes, using these rules:
-
-"Frogger Layout":
-  - Player entity: zone="left"
-  - All non-player entities: zone="right" (hazards enter from the right and move left across lanes)
-
-"Asteroids Layout":
-  - All non-player entities: zone="edges" (spawn from all four edges and drift inward)
-
-"Space Invaders Layout":
-  - All non-player entities: zone="top" (enemies arranged in grid at top)
-  - Player entity spawns at: zone="bottom" (implicit, no <spawn> needed for player)
-
-"Arena Layout":
-  - All non-player entities: zone="edges" (converge from all sides toward center)
-
-"Chase Layout":
-  - Entity with chasedBy set (i.e. it is being chased): zone="center"
-  - Entity that is doing the chasing (has movesAnyWay=true and isPlayer=false): zone="edges"
-  - If isFleeing=true: zone="random"
-
-"Tower Defense Layout":
-  - All non-player entities following a path: zone="left" (enter from left, traverse to right)
-  - Player-controlled interceptors: no spawn element
-
-FALLBACK (if structure_recipe does not match any above):
-  - isFleeing=true or chasedBy is not null → zone="random"
-  - Otherwise → zone="top"
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-XML SCHEMA (fill every placeholder — no comments in output):
-
-<?xml version="1.0" encoding="UTF-8"?>
-<game version="1.0">
-
-  <metadata
-    title="{short title derived from entity names and concept}"
-    concept="{original concept map text verbatim}"
-    howToPlay="{1–2 sentence player instruction based on player entity and win/lose conditions}"
-    rhetoricTheme="{≤ 40 char label from rhetoric critique interpretation}"
-    alignmentScore="{rhetoric critique alignment_score as a decimal, e.g. 0.74}"
-  />
-
-  <entities>
-    <entity name="{EntityName}" isPlayer="{true|false}" speed="{speed}" size="{size}" spawnRate="{spawnRate}">
-      <behavior isPlayer="{true|false}" isStatic="{true|false}" movesAnyWay="{true|false}" growsOverTime="{true|false}" shrinksOverTime="{true|false}" isFleeing="{true|false}" />
-    </entity>
-  </entities>
-
-  <interactions>
-    <interaction actor="{EntityName}" target="{EntityName}" attribute="{attributeName}" />
-  </interactions>
-
-  <win recipe="{win_recipe}" trigger="{trigger}" threshold="{value if applicable}" duration="{value if applicable}" entity="{entity}" />
-
-  <lose recipe="{lose_recipe}" trigger="{trigger}" points="{value if applicable}" duration="{value if applicable}" entity="{entity}" />
-
-  <layout structure="{structure_recipe}">
-    <spawn entity="{EntityName}" zone="{zone}" interval="{interval}" />
-  </layout>
-
-</game>
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-RULES:
-- Include ALL entities from entityAttributeState — none may be omitted
-- Exactly one entity has isPlayer="true"
-- Use speed, size, spawnRate values exactly as given in entityAttributeState
-- Omit XML attributes that are not applicable (e.g. omit threshold= on a survive win, omit duration= on a score win)
-- Every non-null entity-ref attribute must produce exactly one <interaction> element
-- Do NOT output XML comments, only elements and attributes`;
+IMPORTANT:
+- Every entity from the rhetoric assignment must appear in the entities and behaviors arrays
+- Entity IDs in behaviors/interactions must exactly match the entity "id" field (lowercased)
+- Do NOT output XML comments or JavaScript comments — only valid JSON`;
 
   return buildAgentNode(llm, { systemPrompt });
 }

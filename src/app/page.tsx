@@ -7,40 +7,28 @@ import type { GameState, StepResponse } from "@/lib/game/types";
 
 const STEP_LABELS: Record<number, { title: string; description: string }> = {
   1: {
-    title: "News → Concept Map",
-    description: "Distilling the article into a structured concept map",
+    title: "Concept Extraction",
+    description: "Breaking the article into concept sentences and SVO relations",
   },
   2: {
-    title: "Authoring",
-    description: "Extracting entities and relations from the concept map",
+    title: "Rhetoric Assignment",
+    description: "Assigning behavior and interaction rhetorics to entities",
   },
   3: {
-    title: "Micro-Rhetoric Selection",
-    description: "Mapping each verb relationship to a gameplay mechanic",
+    title: "Recipe Selection",
+    description: "Choosing win and lose end conditions",
   },
   4: {
-    title: "Entity Attribute State",
-    description: "Assigning semantic attributes to each entity",
+    title: "Alignment Rating",
+    description: "Rating how well the mechanics express the original concept",
   },
   5: {
-    title: "Recipe Selection",
-    description: "Choosing win condition, lose condition, and layout structure",
-  },
-  6: {
-    title: "Verification & Repair",
-    description: "Checking playability and applying fixes if needed",
-  },
-  7: {
-    title: "Rhetoric Critique",
-    description: "Evaluating whether mechanics express your intended meaning",
-  },
-  8: {
-    title: "XML Generation",
-    description: "Generating the final game engine specification",
+    title: "Game JSON Generation",
+    description: "Generating the final game engine configuration",
   },
 };
 
-const TOTAL_STEPS = 8;
+const TOTAL_STEPS = 5;
 
 // --- StepCard: collapsible result display ---
 
@@ -121,7 +109,7 @@ function StepCard({
 
 export default function Home() {
   const [inputText, setInputText] = useState("");
-  const [gameState, setGameState] = useState<GameState>({ step: 0, input: "" });
+  const [gameState, setGameState] = useState<GameState>({ step: 0 });
   const [uiStatus, setUiStatus] = useState<"idle" | "loading" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -158,7 +146,7 @@ export default function Home() {
 
   const handleStart = useCallback(async () => {
     if (!inputText.trim()) return;
-    const initialState: GameState = { step: 0, input: "", initialInput: inputText.trim() };
+    const initialState: GameState = { step: 0, initialInput: inputText.trim() };
     setGameState(initialState);
     await advanceStep(1, initialState);
   }, [inputText, advanceStep]);
@@ -167,25 +155,25 @@ export default function Home() {
     await advanceStep(currentStep + 1, gameState);
   }, [currentStep, gameState, advanceStep]);
 
-  const handleCopyXml = () => {
-    if (gameState.xmlOutput) {
-      navigator.clipboard.writeText(gameState.xmlOutput);
+  const handleCopyJson = () => {
+    if (gameState.gameJsonOutput) {
+      navigator.clipboard.writeText(gameState.gameJsonOutput);
     }
   };
 
-  const handleDownloadXml = () => {
-    if (!gameState.xmlOutput) return;
-    const blob = new Blob([gameState.xmlOutput], { type: "application/xml" });
+  const handleDownloadJson = () => {
+    if (!gameState.gameJsonOutput) return;
+    const blob = new Blob([gameState.gameJsonOutput], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "game-spec.xml";
+    a.download = "game-config.json";
     a.click();
     URL.revokeObjectURL(url);
   };
 
   const handleReset = () => {
-    setGameState({ step: 0, input: "" });
+    setGameState({ step: 0 });
     setInputText("");
     setUiStatus("idle");
     setErrorMessage(null);
@@ -207,7 +195,7 @@ export default function Home() {
           Game-Authoring-Tool
         </h1>
         <p style={{ margin: "6px 0 0", color: "white", fontSize: 15 }}>
-          Transform a concept map into a playable arcade game specification
+          Transform a news article into a playable arcade game configuration
         </p>
       </div>
 
@@ -218,19 +206,19 @@ export default function Home() {
             htmlFor="concept-input"
             style={{ display: "block", fontWeight: 600, marginBottom: 8, fontSize: 14, color: "white" }}
           >
-            Paste a news article or describe your concept map in plain language
+            Paste a news article or describe your concept in plain language
           </label>
-          <p style={{ margin: "0 0 10px", fontSize: 13, color: "#666" }}>
-            Article example: "On the six month anniversary of the Occupy Wall Street movement, protesters returned to New York's Zuccotti Park and several were arrested. The occupiers are obstructing Wall Street and are being arrested by police, but Wall Street is also growing the occupy movement."
+          <p style={{ margin: "0 0 10px", fontSize: 13, color: "#aaa" }}>
+            Article example: &quot;On the six month anniversary of the Occupy Wall Street movement, protesters returned to New York&apos;s Zuccotti Park and several were arrested. The occupiers are obstructing Wall Street and are being arrested by police, but Wall Street is also growing the occupy movement.&quot;
           </p>
-          <p style={{ margin: "0 0 10px", fontSize: 13, color: "#666" }}>
-            Short concept map also works: "Police arrests Occupier. Occupier obstructs WallStreet. WallStreet grows Occupier."
+          <p style={{ margin: "0 0 10px", fontSize: 13, color: "#aaa" }}>
+            Short concept map also works: &quot;Police arrests Occupier. Occupier obstructs WallStreet. WallStreet grows Occupier.&quot;
           </p>
           <textarea
             id="concept-input"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
-            placeholder="Enter your concept map as sentences describing how entities relate to each other..."
+            placeholder="Enter your concept as sentences describing how entities relate to each other..."
             rows={5}
             style={{
               width: "100%",
@@ -259,7 +247,9 @@ export default function Home() {
               cursor: inputText.trim() && !isLoading ? "pointer" : "not-allowed",
             }}
           >
-            {isLoading ? `Running Step 1 of ${TOTAL_STEPS}...` : `Start — Step 1 of ${TOTAL_STEPS}: ${STEP_LABELS[1]?.title ?? ""}`}
+            {isLoading
+              ? `Running Step 1 of ${TOTAL_STEPS}...`
+              : `Start — Step 1 of ${TOTAL_STEPS}: ${STEP_LABELS[1]?.title ?? ""}`}
           </button>
         </section>
       )}
@@ -336,71 +326,47 @@ export default function Home() {
             color: "#444",
           }}
         >
-          <strong>Article:</strong> {gameState.initialInput}
+          <strong>Input:</strong> {gameState.initialInput}
         </div>
       )}
 
-      {/* Step cards — each completed step's output */}
+      {/* Step cards */}
       <div style={{ marginBottom: 24 }}>
-        {currentStep >= 1 && gameState.input && (
+        {gameState.conceptData && (
           <StepCard
             stepNumber={1}
-            title="News → Concept Map"
-            data={gameState.input}
+            title="Concept Extraction"
+            data={gameState.conceptData}
             isLatest={currentStep === 1 && !isLoading}
           />
         )}
-        {gameState.conceptGraph && (
+        {gameState.rhetoricAssignment && (
           <StepCard
             stepNumber={2}
-            title="Authoring — Concept Graph"
-            data={gameState.conceptGraph}
+            title="Rhetoric Assignment"
+            data={gameState.rhetoricAssignment}
             isLatest={currentStep === 2 && !isLoading}
           />
         )}
-        {gameState.microRhetoricsSelection && (
+        {gameState.recipeOutput && (
           <StepCard
             stepNumber={3}
-            title="Micro-Rhetoric Selection"
-            data={gameState.microRhetoricsSelection}
+            title="Recipe Selection"
+            data={gameState.recipeOutput}
             isLatest={currentStep === 3 && !isLoading}
           />
         )}
-        {gameState.entityAttributeState && (
+        {gameState.alignmentRating && (
           <StepCard
             stepNumber={4}
-            title="Entity Attribute State"
-            data={gameState.entityAttributeState}
+            title="Alignment Rating"
+            data={gameState.alignmentRating}
             isLatest={currentStep === 4 && !isLoading}
           />
         )}
-        {gameState.recipeSelection && (
-          <StepCard
-            stepNumber={5}
-            title="Recipe Selection"
-            data={gameState.recipeSelection}
-            isLatest={currentStep === 5 && !isLoading}
-          />
-        )}
-        {gameState.verifierReport && (
-          <StepCard
-            stepNumber={6}
-            title="Verification & Repair"
-            data={gameState.verifierReport}
-            isLatest={currentStep === 6 && !isLoading}
-          />
-        )}
-        {gameState.rhetoricCritique && (
-          <StepCard
-            stepNumber={7}
-            title="Rhetoric Critique"
-            data={gameState.rhetoricCritique}
-            isLatest={currentStep === 7 && !isLoading}
-          />
-        )}
 
-        {/* XML output (step 8) */}
-        {gameState.xmlOutput && (
+        {/* Game JSON output (step 5) */}
+        {gameState.gameJsonOutput && (
           <details
             open
             style={{
@@ -439,9 +405,9 @@ export default function Home() {
                   flexShrink: 0,
                 }}
               >
-                8
+                5
               </span>
-              XML Game Specification — Final Output (Step 8)
+              Game Configuration JSON — Final Output
             </summary>
             <pre
               style={{
@@ -456,7 +422,7 @@ export default function Home() {
                 wordBreak: "break-word",
               }}
             >
-              {gameState.xmlOutput}
+              {gameState.gameJsonOutput}
             </pre>
             <div
               style={{
@@ -468,7 +434,7 @@ export default function Home() {
               }}
             >
               <button
-                onClick={handleCopyXml}
+                onClick={handleCopyJson}
                 style={{
                   padding: "8px 16px",
                   fontSize: 13,
@@ -480,10 +446,10 @@ export default function Home() {
                   cursor: "pointer",
                 }}
               >
-                Copy XML
+                Copy JSON
               </button>
               <button
-                onClick={handleDownloadXml}
+                onClick={handleDownloadJson}
                 style={{
                   padding: "8px 16px",
                   fontSize: 13,
@@ -495,7 +461,7 @@ export default function Home() {
                   cursor: "pointer",
                 }}
               >
-                Download XML
+                Download JSON
               </button>
             </div>
           </details>
@@ -526,49 +492,6 @@ export default function Home() {
           </button>
         </div>
       )}
-
-      {/* GameState inspector */}
-      <details
-        style={{
-          marginBottom: 20,
-          border: "1px solid #e0e0e0",
-          borderRadius: 6,
-          overflow: "hidden",
-        }}
-      >
-        <summary
-          style={{
-            padding: "10px 14px",
-            cursor: "pointer",
-            background: "#f9fafb",
-            fontWeight: 600,
-            fontSize: 13,
-            userSelect: "none",
-            listStyle: "none",
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            color: "#555",
-          }}
-        >
-          GameState Inspector
-        </summary>
-        <pre
-          style={{
-            margin: 0,
-            padding: "12px 14px",
-            fontSize: 11,
-            lineHeight: 1.5,
-            overflowX: "auto",
-            background: "#fff",
-            color: "#1a1a2e",
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-word",
-          }}
-        >
-          {JSON.stringify(gameState, null, 2)}
-        </pre>
-      </details>
 
       {/* Error display */}
       {errorMessage && (
