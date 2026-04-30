@@ -539,15 +539,9 @@ function GameRenderer({ config, onExit }: { config: CONFIG; onExit: () => void }
   });
 
   return (
-    <Box
-      sx={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 1,
-      }}
-    >
-      <Box sx={{ width: canvas.width, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+      {/* Header row: title/instructions + buttons */}
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <Box>
           <Typography variant="h6" sx={{ fontWeight: "bold", color: "#fff", lineHeight: 1.2 }}>
             {config.meta.title}
@@ -574,42 +568,48 @@ function GameRenderer({ config, onExit }: { config: CONFIG; onExit: () => void }
         </Box>
       </Box>
 
-      <canvas
-        ref={canvasRef}
-        width={canvas.width}
-        height={canvas.height}
-        style={{
-          borderRadius: 12,
-          border: "1px solid #334155",
-          boxShadow: "0 25px 50px rgba(0,0,0,0.5)",
-          maxHeight: "calc(100vh - 180px)",
-          aspectRatio: `${canvas.width} / ${canvas.height}`,
-          width: "auto",
-        }}
-      />
+      {/* Canvas + sidebar */}
+      <Box sx={{ display: "flex", alignItems: "flex-start", gap: 2 }}>
+        <canvas
+          ref={canvasRef}
+          width={canvas.width}
+          height={canvas.height}
+          style={{
+            borderRadius: 12,
+            border: "1px solid #334155",
+            boxShadow: "0 25px 50px rgba(0,0,0,0.5)",
+            maxHeight: "calc(100vh - 120px)",
+            aspectRatio: `${canvas.width} / ${canvas.height}`,
+            width: "auto",
+          }}
+        />
 
-      <Box sx={{ width: canvas.width, display: "flex", flexDirection: "column", gap: 1 }}>
-        {bars.map((bar: { label: string; color: string; pct: number; display: string }) => (
-          <Box key={bar.label} sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-            <Typography sx={{ width: 120, flexShrink: 0, color: "#fff", fontWeight: "bold", fontSize: 13 }}>
-              {bar.label}
-            </Typography>
-            <LinearProgress
-              variant="determinate"
-              value={Math.min(100, Math.max(0, bar.pct))}
-              sx={{
-                flex: 1,
-                height: 14,
-                borderRadius: 7,
-                bgcolor: "#1e293b",
-                "& .MuiLinearProgress-bar": { bgcolor: bar.color, borderRadius: 7 },
-              }}
-            />
-            <Typography sx={{ width: 44, flexShrink: 0, textAlign: "right", color: bar.color, fontWeight: "bold", fontSize: 13 }}>
-              {bar.display}
-            </Typography>
+        {bars.length > 0 && (
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1, minWidth: 180 }}>
+            {bars.map((bar: { label: string; color: string; pct: number; display: string }) => (
+              <Box key={bar.label} sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+                <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                  <Typography sx={{ color: "#fff", fontWeight: "bold", fontSize: 12 }}>
+                    {bar.label}
+                  </Typography>
+                  <Typography sx={{ color: bar.color, fontWeight: "bold", fontSize: 12 }}>
+                    {bar.display}
+                  </Typography>
+                </Box>
+                <LinearProgress
+                  variant="determinate"
+                  value={Math.min(100, Math.max(0, bar.pct))}
+                  sx={{
+                    height: 10,
+                    borderRadius: 5,
+                    bgcolor: "#1e293b",
+                    "& .MuiLinearProgress-bar": { bgcolor: bar.color, borderRadius: 5 },
+                  }}
+                />
+              </Box>
+            ))}
           </Box>
-        ))}
+        )}
       </Box>
     </Box>
   );
