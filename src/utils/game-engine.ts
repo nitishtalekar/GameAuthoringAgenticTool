@@ -1,4 +1,4 @@
-import INTERACTION_TYPES from "@/app/play/interaction-types.json";
+import INTERACTION_TYPES from "@/utils/interaction-types.json";
 import {
   CONFIG,
   EffectContext,
