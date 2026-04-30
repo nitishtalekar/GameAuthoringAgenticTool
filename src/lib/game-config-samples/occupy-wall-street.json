@@ -1,0 +1,144 @@
+{
+  "meta": {
+    "title": "Occupy Wall Street",
+    "instructions": "Move with WASD or arrow keys. Collect Wall Street money to grow. Avoid the Police. Grow big enough to win!",
+    "canvas": { "width": 900, "height": 600, "background": "#1a1a2e" }
+  },
+
+  "entities": [
+    {
+      "id": "occupier",
+      "label": "OWS",
+      "color": "#f59e0b",
+      "initialSize": 22,
+      "minSize": 10,
+      "maxSize": 80,
+      "initialPosition": { "anchor": "center" },
+      "speed": 230
+    },
+    {
+      "id": "wallstreet",
+      "label": "$",
+      "color": "#22c55e",
+      "size": 32,
+      "initialPosition": { "anchor": "none" },
+      "speedMin": 0,
+      "speedMax": 0
+    },
+    {
+      "id": "police",
+      "label": "PD",
+      "color": "#3b82f6",
+      "size": 20,
+      "initialPosition": { "anchor": "none" },
+      "speedMin": 140,
+      "speedMax": 185
+    }
+  ],
+
+  "behaviors": [
+    {
+      "entity": "occupier",
+      "type": "player_controlled",
+      "clampToCanvas": true
+    },
+    {
+      "entity": "police",
+      "type": "chase",
+      "clampToCanvas": false,
+      "properties": {
+        "target": "occupier"
+      }
+    },
+    {
+      "entity": "wallstreet",
+      "type": "spawn_on_timer",
+      "properties": {
+        "intervalMs": 1800,
+        "max": 2,
+        "spawnAt": {
+          "anchor": "random_canvas",
+          "margin": 30
+        },
+        "speedMin": 0,
+        "speedMax": 0
+      }
+    },
+    {
+      "entity": "police",
+      "type": "spawn_on_timer",
+      "properties": {
+        "intervalMs": 3500,
+        "max": 6,
+        "spawnAt": {
+          "anchor": "random_edge",
+          "offset": 30
+        },
+        "speedMin": 140,
+        "speedMax": 185
+      }
+    }
+  ],
+
+  "interactions": [
+    { "entityA": "occupier", "entityB": "wallstreet", "type": "consume" },
+    { "entityA": "occupier", "entityB": "police",     "type": "damage"  }
+  ],
+
+  "endConditions": [
+    {
+      "id": "movement_wins",
+      "type": "entity_property_threshold",
+      "properties": {
+        "entity": "occupier",
+        "property": "size",
+        "operator": ">=",
+        "value": 80
+      },
+      "result": "won",
+      "message": "The Movement Won!"
+    },
+    {
+      "id": "time_runs_out",
+      "type": "timer_elapsed",
+      "properties": {
+        "seconds": 90
+      },
+      "result": "lost",
+      "message": "The Movement Was Crushed."
+    },
+    {
+      "id": "too_small",
+      "type": "entity_property_threshold",
+      "properties": {
+        "entity": "occupier",
+        "property": "size",
+        "operator": "<=",
+        "value": 10
+      },
+      "result": "lost",
+      "message": "The Movement Was Dispersed!"
+    }
+  ],
+
+  "ui": {
+    "statusBars": [
+      {
+        "label": "Movement",
+        "source": "entity_size",
+        "entity": "occupier",
+        "color": "#f59e0b",
+        "displayMode": "percent",
+        "min": 10,
+        "max": 80
+      },
+      {
+        "label": "Time Left",
+        "source": "timer_remaining",
+        "color": "#ef4444",
+        "displayMode": "seconds",
+        "total": 90
+      }
+    ]
+  }
+}

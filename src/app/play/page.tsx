@@ -37,7 +37,7 @@ interface GameContext {
   canvas: { width: number; height: number; background: string };
   keys: Record<string, boolean>;
   instanceCounter: { current: number };
-  lastSpawn: { current: number };
+  lastSpawnMap: { current: Record<number, number> };
   onSizeChange: (entityId: string, newSize: number) => void;
 }
 
@@ -157,19 +157,54 @@ function handleChase(behavior: CONFIG, ctx: GameContext): void {
   });
 }
 
-function handleSpawnOnTimer(behavior: CONFIG, ctx: GameContext, config: CONFIG): void {
+function resolveSpawnPosition(
+  p: CONFIG,
+  ctx: GameContext
+): { x: number; y: number } {
+  const w = ctx.canvas.width;
+  const h = ctx.canvas.height;
+  const anchor = p.spawnAt?.anchor;
+
+  if (anchor === "near_entity") {
+    const ref = ctx.states[p.spawnAt.entity]?.[0];
+    const angle = Math.random() * Math.PI * 2;
+    return {
+      x: (ref?.x ?? w / 2) + Math.cos(angle) * p.spawnAt.offsetRadius,
+      y: (ref?.y ?? h / 2) + Math.sin(angle) * p.spawnAt.offsetRadius,
+    };
+  }
+
+  if (anchor === "random_canvas") {
+    const margin = p.spawnAt?.margin ?? 20;
+    return {
+      x: margin + Math.random() * (w - margin * 2),
+      y: margin + Math.random() * (h - margin * 2),
+    };
+  }
+
+  if (anchor === "random_edge") {
+    const offset = p.spawnAt?.offset ?? 30;
+    const edge = Math.floor(Math.random() * 4);
+    if (edge === 0) return { x: Math.random() * w, y: -offset };        // top
+    if (edge === 1) return { x: Math.random() * w, y: h + offset };     // bottom
+    if (edge === 2) return { x: -offset,            y: Math.random() * h }; // left
+    return                 { x: w + offset,          y: Math.random() * h }; // right
+  }
+
+  return { x: w / 2, y: h / 2 };
+}
+
+function handleSpawnOnTimer(behavior: CONFIG, behaviorIndex: number, ctx: GameContext, config: CONFIG): void {
   const p = behavior.properties;
-  if (ctx.now - ctx.lastSpawn.current <= p.intervalMs) return;
+  const lastSpawn = ctx.lastSpawnMap.current[behaviorIndex] ?? 0;
+  if (ctx.now - lastSpawn <= p.intervalMs) return;
+
   const enemyDef = config.entities.find((e: CONFIG) => e.id === behavior.entity);
   if (!enemyDef) return;
-  let spawnX = ctx.canvas.width / 2;
-  let spawnY = ctx.canvas.height / 2;
-  if (p.spawnAt?.anchor === "near_entity") {
-    const anchor = ctx.states[p.spawnAt.entity]?.[0];
-    const angle = Math.random() * Math.PI * 2;
-    spawnX = (anchor?.x ?? spawnX) + Math.cos(angle) * p.spawnAt.offsetRadius;
-    spawnY = (anchor?.y ?? spawnY) + Math.sin(angle) * p.spawnAt.offsetRadius;
-  }
+  if (p.max !== undefined && ctx.states[behavior.entity].length >= p.max) return;
+
+  const { x: spawnX, y: spawnY } = resolveSpawnPosition(p, ctx);
+
   ctx.states[behavior.entity].push({
     id: behavior.entity,
     instanceId: ctx.instanceCounter.current++,
@@ -178,7 +213,7 @@ function handleSpawnOnTimer(behavior: CONFIG, ctx: GameContext, config: CONFIG):
     size: enemyDef.size ?? 20,
     speed: p.speedMin + Math.random() * (p.speedMax - p.speedMin),
   });
-  ctx.lastSpawn.current = ctx.now;
+  ctx.lastSpawnMap.current[behaviorIndex] = ctx.now;
 }
 
 // ---------------------------------------------------------------------------
@@ -240,7 +275,7 @@ function GameRenderer({ config, onExit }: { config: CONFIG; onExit: () => void }
   const keysRef = useRef<Record<string, boolean>>({});
   const animRef = useRef<number | null>(null);
   const statesRef = useRef<Record<string, EntityState[]>>(buildInitialStates(config));
-  const lastSpawnRef = useRef(0);
+  const lastSpawnMapRef = useRef<Record<number, number>>({});
   const instanceCounterRef = useRef(1);
   const startTimeRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number | null>(null);
@@ -263,7 +298,7 @@ function GameRenderer({ config, onExit }: { config: CONFIG; onExit: () => void }
 
   const resetGame = () => {
     statesRef.current = buildInitialStates(config);
-    lastSpawnRef.current = 0;
+    lastSpawnMapRef.current = {};
     instanceCounterRef.current = 1;
     startTimeRef.current = null;
     lastTimeRef.current = null;
@@ -293,17 +328,17 @@ function GameRenderer({ config, onExit }: { config: CONFIG; onExit: () => void }
           states, delta, now, elapsed, remaining, canvas,
           keys: keysRef.current,
           instanceCounter: instanceCounterRef,
-          lastSpawn: lastSpawnRef,
+          lastSpawnMap: lastSpawnMapRef,
           onSizeChange: (id, val) => {
             if (playerDef && id === playerDef.id) setPlayerSize(val);
           },
         };
 
-        for (const behavior of config.behaviors) {
+        config.behaviors.forEach((behavior: CONFIG, i: number) => {
           if (behavior.type === "player_controlled") handlePlayerControlled(behavior, gameCtx);
           else if (behavior.type === "chase") handleChase(behavior, gameCtx);
-          else if (behavior.type === "spawn_on_timer") handleSpawnOnTimer(behavior, gameCtx, config);
-        }
+          else if (behavior.type === "spawn_on_timer") handleSpawnOnTimer(behavior, i, gameCtx, config);
+        });
 
         for (const interaction of config.interactions) {
           const interactionDef = INTERACTION_TYPES[interaction.type as keyof typeof INTERACTION_TYPES];
