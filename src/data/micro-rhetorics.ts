@@ -1,167 +1,83 @@
-export type MicroRhetoricCategory = "individual" | "relational";
-
-export interface MicroRhetoric {
+// Behaviors: self-contained, single-entity behaviors defined in the game-config schema
+export interface BehaviorRhetoric {
   name: string;
-  component: string;
-  category: MicroRhetoricCategory;
-  tags: string[];
+  behaviorType: string; // maps to config.behaviors[].type
   description: string;
+  tags: string[];
   applicableVerbs: string[];
 }
 
-export const MICRO_RHETORICS: MicroRhetoric[] = [
-  // --- Individual: self-contained behaviors that need no collision partner ---
-  {
-    name: "Wander",
-    component: "RandomMovementComponent",
-    category: "individual",
-    tags: ["wander", "roam", "drift", "move randomly"],
-    description: "Moves in random, unpredictable directions.",
-    applicableVerbs: ["wanders", "roams", "drifts", "moves randomly", "floats"],
-  },
-  {
-    name: "Patrol",
-    component: "PatrolBetweenPointsComponent",
-    category: "individual",
-    tags: ["patrol", "guard", "cycle", "pace"],
-    description: "Moves back and forth on a fixed path.",
-    applicableVerbs: ["patrols", "guards", "paces", "cycles", "watches over"],
-  },
-  {
-    name: "Chase Player",
-    component: "HomingMovementComponent",
-    category: "individual",
-    tags: ["chase", "hunt", "pursue", "track", "follow"],
-    description: "Homes in on the player.",
-    applicableVerbs: ["chases", "hunts", "pursues", "tracks", "follows", "stalks"],
-  },
-  {
-    name: "Flee Player",
-    component: "FleeTargetComponent",
-    category: "individual",
-    tags: ["flee", "evade", "run", "escape", "avoid"],
-    description: "Moves away from the player.",
-    applicableVerbs: ["flees", "evades", "runs from", "escapes", "avoids"],
-  },
-  {
-    name: "Grow Over Time",
-    component: "GrowOverTimeComponent",
-    category: "individual",
-    tags: ["grow", "expand", "inflate", "swell"],
-    description: "Gradually increases in size over time.",
-    applicableVerbs: ["grows", "expands", "inflates", "swells", "enlarges"],
-  },
-  {
-    name: "Shrink Over Time",
-    component: "ShrinkOverTimeComponent",
-    category: "individual",
-    tags: ["shrink", "decay", "fade", "wither", "deplete"],
-    description: "Gradually decreases in size and eventually disappears.",
-    applicableVerbs: ["shrinks", "decays", "fades", "withers", "depletes", "erodes"],
-  },
-  {
-    name: "Accelerate Over Time",
-    component: "IncreaseSpeedOverTimeComponent",
-    category: "individual",
-    tags: ["accelerate", "speed up", "escalate", "intensify"],
-    description: "Increases movement speed as time passes.",
-    applicableVerbs: ["accelerates", "speeds up", "escalates", "intensifies"],
-  },
-  {
-    name: "Spawn Periodically",
-    component: "SpawnPeriodicallyComponent",
-    category: "individual",
-    tags: ["spawn", "multiply", "replicate", "reproduce", "proliferate"],
-    description: "Periodically creates new copies of itself.",
-    applicableVerbs: ["spawns", "multiplies", "replicates", "reproduces", "proliferates"],
-  },
-  {
-    name: "Static Obstacle",
-    component: "StaticObstacleComponent",
-    category: "individual",
-    tags: ["block", "obstacle", "wall", "barrier", "immovable"],
-    description: "Does not move; acts as an immovable barrier.",
-    applicableVerbs: ["blocks", "bars", "obstructs", "stands in the way of"],
-  },
+// Interactions: collision-based effects between two entities, defined in the game-config schema
+export interface InteractionRhetoric {
+  name: string;
+  interactionType: string; // maps to config.interactions[].type
+  description: string;
+  tags: string[];
+  applicableVerbs: string[];
+}
 
-  // --- Relational: effects triggered when subject contacts the object ---
+export const BEHAVIOR_RHETORICS: BehaviorRhetoric[] = [
   {
-    name: "Add Score on Collide",
-    component: "AddScoreOnCollideComponent",
-    category: "relational",
-    tags: ["collect", "score", "reward", "gain", "pickup"],
-    description: "Player gains score on contact; entity is removed.",
-    applicableVerbs: ["collects", "scores", "rewards", "gains", "earns", "picks up"],
+    name: "Player Controlled",
+    behaviorType: "player_controlled",
+    description: "Entity is moved by the player via keyboard input (WASD / arrow keys). Optionally clamped to canvas bounds.",
+    tags: ["player", "controlled", "input", "move", "keyboard"],
+    applicableVerbs: ["controls", "moves", "steers", "navigates", "drives"],
   },
   {
-    name: "Damage on Collide",
-    component: "DamageOnCollideComponent",
-    category: "relational",
-    tags: ["damage", "hurt", "harm", "injure", "attack"],
-    description: "Reduces the target's health on contact.",
-    applicableVerbs: ["damages", "hurts", "harms", "injures", "attacks", "poisons"],
+    name: "Chase",
+    behaviorType: "chase",
+    description: "Entity continuously moves toward a target entity.",
+    tags: ["chase", "hunt", "pursue", "follow", "track"],
+    applicableVerbs: ["chases", "hunts", "pursues", "follows", "tracks", "stalks"],
   },
   {
-    name: "Remove on Collide",
-    component: "RemoveOnCollideComponent",
-    category: "relational",
-    tags: ["remove", "destroy", "eliminate", "defeat", "kill"],
-    description: "Removes the object from the game on contact.",
-    applicableVerbs: ["kills", "destroys", "eliminates", "removes", "defeats", "erases"],
-  },
-  {
-    name: "Grow on Collide",
-    component: "GrowOnCollideComponent",
-    category: "relational",
-    tags: ["grow", "absorb", "expand", "consume"],
-    description: "Subject grows larger each time it contacts the object.",
-    applicableVerbs: ["absorbs", "consumes", "grows from", "expands by eating"],
-  },
-  {
-    name: "Shrink on Collide",
-    component: "ShrinkOnCollideComponent",
-    category: "relational",
-    tags: ["shrink", "reduce", "diminish", "weaken"],
-    description: "Subject shrinks when it contacts the object.",
-    applicableVerbs: ["shrinks", "reduces", "diminishes", "weakens", "deflates"],
-  },
-  {
-    name: "Spawn on Remove",
-    component: "SpawnEntityOnRemoveComponent",
-    category: "relational",
-    tags: ["spawn", "release", "hatch", "produce"],
-    description: "When the object is removed, spawns new entities.",
-    applicableVerbs: ["spawns from", "releases", "hatches from", "produces when destroyed"],
-  },
-  {
-    name: "Push on Collide",
-    component: "ApplyForceOnCollideComponent",
-    category: "relational",
-    tags: ["push", "repel", "shove", "displace", "force back"],
-    description: "Applies a repulsive force pushing the object away on contact.",
-    applicableVerbs: ["pushes", "repels", "shoves", "displaces", "forces back"],
-  },
-  {
-    name: "Freeze on Collide",
-    component: "StopMovementOnCollideComponent",
-    category: "relational",
-    tags: ["freeze", "stop", "halt", "immobilize", "stun"],
-    description: "Halts the object's movement temporarily on contact.",
-    applicableVerbs: ["freezes", "stops", "halts", "immobilizes", "stuns"],
-  },
-  {
-    name: "Convert on Collide",
-    component: "TransformTargetIntoSelfComponent",
-    category: "relational",
-    tags: ["convert", "infect", "spread", "transform", "recruit"],
-    description: "Transforms the object into the subject's type on contact.",
-    applicableVerbs: ["converts", "infects", "spreads to", "transforms", "recruits"],
+    name: "Spawn On Timer",
+    behaviorType: "spawn_on_timer",
+    description: "Periodically spawns new instances of an entity at a configurable rate and position.",
+    tags: ["spawn", "create", "generate", "produce", "appear"],
+    applicableVerbs: ["spawns", "creates", "generates", "produces", "appears"],
   },
 ];
 
-export function formatMicroRhetoricsForPrompt(): string {
-  return MICRO_RHETORICS.map(
-    (mr) =>
-      `- ${mr.name} | component: ${mr.component} | category: ${mr.category} | tags: ${mr.tags.join(", ")} | ${mr.description}`
+export const INTERACTION_RHETORICS: InteractionRhetoric[] = [
+  {
+    name: "Consume",
+    interactionType: "consume",
+    description: "Entity A grows in size when it contacts entity B; B is teleported to a random position.",
+    tags: ["consume", "eat", "absorb", "grow", "collect"],
+    applicableVerbs: ["consumes", "eats", "absorbs", "collects", "grows from"],
+  },
+  {
+    name: "Damage",
+    interactionType: "damage",
+    description: "Entity A shrinks when it contacts entity B; B is destroyed on contact.",
+    tags: ["damage", "hurt", "shrink", "destroy", "attack"],
+    applicableVerbs: ["damages", "hurts", "attacks", "shrinks", "injures"],
+  },
+];
+
+export function formatBehaviorRhetoricsForPrompt(): string {
+  return BEHAVIOR_RHETORICS.map(
+    (b) =>
+      `- ${b.name} | behaviorType: ${b.behaviorType} | tags: ${b.tags.join(", ")} | ${b.description}`
   ).join("\n");
+}
+
+export function formatInteractionRhetoricsForPrompt(): string {
+  return INTERACTION_RHETORICS.map(
+    (i) =>
+      `- ${i.name} | interactionType: ${i.interactionType} | tags: ${i.tags.join(", ")} | ${i.description}`
+  ).join("\n");
+}
+
+// Combined helper for agents that need both lists
+export function formatMicroRhetoricsForPrompt(): string {
+  return [
+    "BEHAVIOR RHETORICS (single-entity):",
+    formatBehaviorRhetoricsForPrompt(),
+    "",
+    "INTERACTION RHETORICS (two-entity collision effects):",
+    formatInteractionRhetoricsForPrompt(),
+  ].join("\n");
 }

@@ -1,9 +1,12 @@
 import { createOpenAIModel } from "@/lib/models";
 import { buildAgentNode } from "@/lib/agent";
 import type { NodeFunction } from "@/lib/types";
-import { formatMicroRhetoricsForPrompt } from "@/data/micro-rhetorics";
-import { formatRecipesForPrompt } from "@/data/recipes";
-import { formatEntityAttributesForPrompt } from "@/data/entity-attributes";
+import {
+  formatMicroRhetoricsForPrompt,
+  formatBehaviorRhetoricsForPrompt,
+  formatInteractionRhetoricsForPrompt,
+} from "@/data/micro-rhetorics";
+import { formatWinRecipesForPrompt, formatLoseRecipesForPrompt, formatRecipesForPrompt } from "@/data/recipes";
 
 /**
  * News → Concept Map Agent
@@ -112,13 +115,17 @@ OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no
  */
 export function buildEntityAttributeAgent(): NodeFunction {
   const llm = createOpenAIModel({ temperature: 0.2 });
-  const attributeList = formatEntityAttributesForPrompt();
+  const behaviorList = formatBehaviorRhetoricsForPrompt();
+  const interactionList = formatInteractionRhetoricsForPrompt();
 
   const systemPrompt = `You are an entity attribute assignment agent for the Game-Authoring-Tool system.
 Given the original user concept, a concept graph, and micro-rhetoric selections, assign values for every predefined attribute to every entity.
 
-PREDEFINED ATTRIBUTES (assign ALL of these for every entity — do not omit any key):
-${attributeList}
+AVAILABLE BEHAVIOR TYPES (single-entity):
+${behaviorList}
+
+AVAILABLE INTERACTION TYPES (two-entity collision effects):
+${interactionList}
 
 ASSIGNMENT RULES:
 1. Every entity must have an entry with ALL attributes above — omitting a key is invalid.
@@ -182,18 +189,12 @@ OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no
  */
 export function buildRecipeAgent(): NodeFunction {
   const llm = createOpenAIModel({ temperature: 0.3 });
-  const winRecipes = formatRecipesForPrompt("win");
-  const loseRecipes = formatRecipesForPrompt("lose");
-  const structureRecipes = formatRecipesForPrompt("structure");
-  const patchRecipes = formatRecipesForPrompt("patch");
-  const attributeList = formatEntityAttributesForPrompt();
+  const winRecipes = formatWinRecipesForPrompt();
+  const loseRecipes = formatLoseRecipesForPrompt();
 
   const systemPrompt = `You are a recipe selection agent for the Game-Authoring-Tool system.
-Given the entity attribute state, select one win recipe, one lose recipe, one structure recipe, and any relevant patch recipes.
-Then produce a concrete win_condition and lose_condition that reference the actual entities and attributes from the entity attribute state.
-
-ENTITY ATTRIBUTE REFERENCE (all possible attributes and their meanings):
-${attributeList}
+Given the entity attribute state, select one win recipe and one lose recipe.
+Then produce a concrete win_condition and lose_condition that reference the actual entities and interaction types from the entity attribute state.
 
 WIN RECIPES:
 ${winRecipes}
@@ -201,75 +202,45 @@ ${winRecipes}
 LOSE RECIPES:
 ${loseRecipes}
 
-STRUCTURE RECIPES:
-${structureRecipes}
-
-PATCH RECIPES:
-${patchRecipes}
-
 RULES:
-- Select exactly one win_recipe, one lose_recipe, and one structure_recipe
-- Select zero or more patch_recipes (use an empty array if none needed)
+- Select exactly one win_recipe and one lose_recipe
 - All selected names must come from the lists above exactly as written
-- Choose recipes that match the mechanics that are already present in the entity components
+- Choose recipes that match the interaction types present in the entity config
 
 WIN_CONDITION AND LOSE_CONDITION RULES:
 - Both must be derived directly from the entityAttributeState passed in the user message
 - entity: must be an exact entity name from the entityAttributeState
-- attribute: must be an exact attribute key from the entity attribute reference above (e.g. "isRemovedBy", "isDamagedBy", "growsBy", "growsOverTime", "shrinksOverTime")
-- value: depends on the attribute type —
-    • entity-ref attributes (isRemovedBy, growsBy, shrinksBy, stopsBy, isDamagedBy, chasedBy): use the referenced entity name (e.g. "Player")
-    • boolean attributes that imply a measurable threshold (growsOverTime, shrinksOverTime): use a numeric threshold string with unit suffix — size in pixels (e.g. "256px") for grow/shrink, seconds (e.g. "60s") for time-based
-    • boolean attributes with no natural threshold (movesAnyWay, isPlayer, isFleeing): use "true" or "false"
-- description: a plain-English constraint string (e.g. "All Asteroid isRemovedBy Player", "Blob growsOverTime reaches 256px", "Player survives for 60s")
+- interactionType: the interaction type driving the condition — "consume", "damage", or null for timer-based
+- value: a numeric threshold with unit suffix — size in pixels (e.g. "256px") for grow/shrink, seconds (e.g. "60s") for timers
+- description: a plain-English constraint string (e.g. "Player grows to 256px by consuming Food", "Player size drops below 10px", "Player survives for 60s")
 - Recipe-to-condition mapping:
-    • "Eliminate All Of Type" (win): entity = type being eliminated, attribute = "isRemovedBy", value = removing entity name
-    • "Grow Beyond Size" (win): entity = the growing entity, attribute = "growsOverTime" or "growsBy", value = size threshold in pixels (e.g. "256px")
-    • "Survive Duration" (win): entity = player entity, attribute = "movesAnyWay", value = duration in seconds (e.g. "60s")
-    • "Reach Goal Zone" (win): entity = player entity, attribute = "movesAnyWay", value = "true"
-    • "Score Threshold Win" (win): entity = the entity being collected/removed for score, attribute = "isRemovedBy", value = player entity name
-    • "Run Out Of Time" (lose): entity = player entity, attribute = "movesAnyWay", value = timer duration in seconds (e.g. "30s")
-    • "Health Depletion" (lose): entity = player entity, attribute = "isDamagedBy", value = the damaging entity name
-    • "Protected Entity Removed" (lose): entity = the protected entity, attribute = "isRemovedBy", value = the entity that removes it
+    • "Grow Beyond Size" (win): entity = player entity, interactionType = "consume", value = size threshold in pixels (e.g. "256px")
+    • "Survive Duration" (win): entity = player entity, interactionType = null, value = duration in seconds (e.g. "60s")
+    • "Size Depleted" (lose): entity = player entity, interactionType = "damage", value = minimum size threshold in pixels (e.g. "10px")
+    • "Timer Expired" (lose): entity = player entity, interactionType = null, value = timer duration in seconds (e.g. "60s")
 
 CRITICAL — WIN AND LOSE CONDITIONS MUST BE MUTUALLY EXCLUSIVE:
-The win and lose conditions must describe opposite, non-contradictory outcomes for the same game state.
-Ask yourself: "Can both the win condition and the lose condition trigger for the same event?" If yes, you have chosen conflicting recipes — pick different ones.
-
-Forbidden combinations (these pairs directly contradict each other and must NEVER be used together):
-- "Eliminate All Of Type" (win) + "Protected Entity Removed" (lose): removing entities cannot simultaneously be both the goal and the failure state for the same entity type.
-- "Escort Entity Safely" (win) + "Protected Entity Removed" (lose) against the SAME entity: keeping an entity alive cannot be the win trigger and its death the lose trigger at the same time unless they refer to different entities.
-- Any win recipe that requires removing entity X + any lose recipe that requires preserving entity X.
-
-To avoid contradictions, follow this decision logic:
-1. If the player wins by removing a specific entity type → the lose condition must NOT be triggered by that same entity type being removed (e.g., use "Run Out Of Time" or "Health Depletion" instead).
-2. If the player wins by keeping an entity alive → the lose condition SHOULD be triggered by that entity being removed (this is consistent, not contradictory).
-3. If the lose condition is "Protected Entity Removed", the win condition must NOT involve removing that protected entity.
-
-Verify your selection before outputting: state which entity type triggers win and which triggers lose, and confirm they are different events or different entity types.
+The win and lose conditions must describe opposite outcomes. Verify before outputting that the win and lose events cannot both trigger for the same game state.
 
 OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no markdown fences, no extra text:
 {
   "win_recipe": "recipe name",
   "lose_recipe": "recipe name",
-  "structure_recipe": "recipe name",
-  "patch_recipes": ["recipe name"],
   "win_condition": {
-    "description": "All Asteroid isRemovedBy Player",
-    "entity": "Asteroid",
-    "attribute": "isRemovedBy",
-    "value": "Player"
+    "description": "Player grows to 256px by consuming Food",
+    "entity": "Player",
+    "interactionType": "consume",
+    "value": "256px"
   },
   "lose_condition": {
-    "description": "Player survives for 60s",
+    "description": "Player size drops below 10px",
     "entity": "Player",
-    "attribute": "movesAnyWay",
-    "value": "60s"
+    "interactionType": "damage",
+    "value": "10px"
   },
   "justifications": {
     "win": "one sentence explaining which mechanic/entity triggers the win",
-    "lose": "one sentence explaining which mechanic/entity triggers the lose — must NOT reference the same entity or event as the win justification",
-    "structure": "one sentence"
+    "lose": "one sentence explaining which mechanic/entity triggers the lose"
   }
 }`;
 
@@ -285,8 +256,7 @@ OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no
  */
 export function buildVerifierAgent(): NodeFunction {
   const llm = createOpenAIModel({ temperature: 0.1 });
-  const componentLibrary = formatMicroRhetoricsForPrompt();
-  const attributeList = formatEntityAttributesForPrompt();
+  const rhetoricLibrary = formatMicroRhetoricsForPrompt();
 
   const systemPrompt = `You are a playability verifier and repair agent for the Game-Authoring-Tool system.
 You receive the original concept, entity attribute state, and recipe selection (win/lose conditions).
@@ -296,60 +266,39 @@ ALLOWED REPAIR OPERATORS:
 - AlterAttribute: change an attribute value on an entity in entityAttributeState
 - AdjustParameter: change a numeric parameter on an entity (speed, size, spawnRate)
 - AssignPlayer: mark an entity as the player (sets isPlayer=true on that entity's attributes)
-- AddComponent: add a component to an entity's assembled spec
-- RemoveComponent: remove a component from an entity's assembled spec
-- ReplaceComponent: replace one component with another
 
-ENTITY ATTRIBUTE REFERENCE:
-${attributeList}
+AVAILABLE BEHAVIORS AND INTERACTIONS:
+${rhetoricLibrary}
 
 CONDITION VALUE TYPES — understand these before checking conditions:
-There are two kinds of condition values and you must NOT confuse them:
-- Entity-ref value: the value is an entity name (e.g. "Player"). Check that entityAttributeState[condition.entity][condition.attribute] equals that entity name.
-- Threshold value: the value is a numeric measurement with a unit suffix — pixels (e.g. "256px") or seconds (e.g. "60s"). These are NOT stored in entityAttributeState; they are runtime thresholds evaluated by the game engine. A threshold value is always valid as long as the attribute supports it (growsOverTime, shrinksOverTime → px; movesAnyWay used as survival timer → seconds). Do NOT flag threshold values as issues.
+All condition values are numeric thresholds with a unit suffix — pixels (e.g. "256px") for size-based conditions, seconds (e.g. "60s") for timer-based conditions. These are runtime thresholds evaluated by the game engine. Always treat well-formed threshold values as valid.
 
 PLAYABILITY CHECKLIST — verify ALL of the following:
 1. Exactly one entity has isPlayer=true in entityAttributeState
-2. The player entity has movesAnyWay=true (player must be able to move)
-3. The win_condition.entity and win_condition.attribute both exist in entityAttributeState
-4. The win_condition value is valid:
-   - If the value ends with "px" or "s" → it is a threshold value; ALWAYS treat this as valid, no repair needed
-   - Otherwise → it is an entity-ref; check that entityAttributeState[win_condition.entity][win_condition.attribute] equals the value
-5. The lose_condition.entity and lose_condition.attribute both exist in entityAttributeState
-6. The lose_condition value is valid (same rule as #4 above — threshold values ending in "px" or "s" are always valid)
+2. The player entity has a behavior of type "player_controlled"
+3. The win_condition.entity exists in entityAttributeState
+4. The win_condition.value is a valid threshold (ends with "px" or "s")
+5. The lose_condition.entity exists in entityAttributeState
+6. The lose_condition.value is a valid threshold (ends with "px" or "s")
 7. Win and lose conditions do not trigger for the same game event (they must be distinct)
 8. At least one non-player entity exists in the game
-9. Numeric parameters are within reasonable ranges for every entity in entityAttributeState:
-   - speed: 0–250 (0 is valid for static entities; moving entities should have speed ≥ 50)
+9. Numeric parameters are within reasonable ranges for every entity:
+   - speed: 0–250 (0 for static; moving entities ≥ 50)
    - size: 16–64
-   - spawnRate: 0–5.0 (0 is valid for the player entity; non-player entities should have spawnRate ≥ 0.5)
-   - If any parameter is missing, out of range, or clearly wrong for the entity's role, propose an AdjustParameter repair
-
-AVAILABLE COMPONENTS (for AddComponent / ReplaceComponent repairs):
-${componentLibrary}
+   - spawnRate: 0–5.0 (0 for player; non-player entities ≥ 0.5)
 
 REPAIR RULES:
 - Propose ONLY the minimum repairs necessary
-- AlterAttribute repairs: set "attribute" to the attribute key and "attributeValue" to the new value (boolean, string, or null)
-- AssignPlayer repairs: set "target" to the entity name; this implicitly sets isPlayer=true and movesAnyWay=true on that entity
+- AlterAttribute repairs: set "attribute" to the key and "attributeValue" to the new value
+- AssignPlayer repairs: set "target" to the entity name
 - Win/lose condition repairs: use operator="AlterAttribute" with conditionField="win_condition" or "lose_condition" and conditionValue containing the full updated condition object
-- If win_condition or lose_condition reference an attribute that doesn't match any entity's actual attributes, propose an AlterAttribute repair to fix the entity attribute OR a condition repair to point to the correct attribute
-
-CONCEPT GRAPH CONSISTENCY CHECKS — evaluate these AFTER playability checks:
-For each relation in the concept graph (subject verb object), verify:
-a. Both subject and object appear as entities in entityAttributeState.
-b. The relationship implied by the relation is encoded as at least one attribute (e.g. "A destroys B" → B.isRemovedBy = "A"; "A chases B" → B.chasedBy = "A"; "A damages B" → B.isDamagedBy = "A").
-c. The win/lose conditions are consistent with the most prominent relations in the concept graph (e.g. if the graph says "Player destroys Asteroid", the win condition should involve Asteroid isRemovedBy Player).
-If a concept graph relation is NOT encoded in entityAttributeState, add an AlterAttribute suggestion to encode it.
-
-All identified issues — whether blocking playability or improving concept graph consistency/balance — are returned as a single unified "repairs" list and ALL will be applied to entityAttributeState and recipeSelection.
 
 If all checks pass, set isPlayable=true and return an empty repairs array.
 
 OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no markdown fences, no extra text:
 {
   "isPlayable": true,
-  "issues": ["description of each issue found (playability blocking or concept consistency gap)"],
+  "issues": ["description of each issue found"],
   "repairs": [
     {
       "operator": "AlterAttribute",
@@ -366,10 +315,10 @@ OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no
       "target": "win_condition",
       "conditionField": "win_condition",
       "conditionValue": {
-        "description": "All Asteroid isRemovedBy Player",
-        "entity": "Asteroid",
-        "attribute": "isRemovedBy",
-        "value": "Player"
+        "description": "Player grows to 256px",
+        "entity": "Player",
+        "interactionType": "consume",
+        "value": "256px"
       }
     },
     {
@@ -377,20 +326,6 @@ OUTPUT: Respond ONLY with valid JSON matching this exact schema — no prose, no
       "target": "EntityName",
       "parameter": "speed",
       "value": 150
-    },
-    {
-      "operator": "AdjustParameter",
-      "target": "EntityName",
-      "parameter": "spawnRate",
-      "value": 2.5,
-      "description": "Increase spawn rate for better pacing"
-    },
-    {
-      "operator": "AlterAttribute",
-      "target": "EntityName",
-      "attribute": "isRemovedBy",
-      "attributeValue": "OtherEntity",
-      "description": "The relation 'OtherEntity destroys EntityName' is not encoded in entityAttributeState."
     }
   ],
   "repairsSummary": "Plain-English summary of all repairs applied (or 'No repairs needed' if none)."
