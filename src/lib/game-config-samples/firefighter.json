@@ -1,0 +1,182 @@
+{
+  "meta": {
+    "title": "Firefighter",
+    "instructions": "WASD to move. Walk into water (blue) to collect it. Walk into fire with water to extinguish it. Protect the houses!",
+    "canvas": { "width": 900, "height": 600, "background": "#1a0a00" }
+  },
+
+  "entities": [
+    {
+      "id": "firefighter",
+      "label": "FF",
+      "color": "#f97316",
+      "initialSize": 22,
+      "minSize": 8,
+      "maxSize": 50,
+      "initialPosition": { "anchor": "center" },
+      "speed": 240,
+      "maxInventory": { "water": 5 }
+    },
+    {
+      "id": "fire",
+      "label": "Fire",
+      "color": "#ef4444",
+      "initialSize": 20,
+      "minSize": 0,
+      "maxSize": 55,
+      "initialPosition": { "anchor": "fixed", "x": 200, "y": 150 },
+      "speed": 0
+    },
+    {
+      "id": "water",
+      "label": "W",
+      "color": "#38bdf8",
+      "size": 14,
+      "initialPosition": { "anchor": "none" },
+      "speed": 0
+    },
+    {
+      "id": "house",
+      "label": "H",
+      "color": "#a3e635",
+      "size": 28,
+      "minSize": 0,
+      "initialPosition": { "anchor": "none" },
+      "speed": 0
+    }
+  ],
+
+  "behaviors": [
+    {
+      "entity": "firefighter",
+      "type": "player_controlled",
+      "clampToCanvas": true
+    },
+    {
+      "entity": "fire",
+      "type": "grow_over_time",
+      "properties": {
+        "property": "size",
+        "rate": 1.5,
+        "clampToMax": true
+      }
+    },
+    {
+      "entity": "water",
+      "type": "spawn_on_timer",
+      "properties": {
+        "intervalMs": 3000,
+        "max": 4,
+        "spawnAt": { "anchor": "random_canvas", "margin": 40 },
+        "speedMin": 0,
+        "speedMax": 0
+      }
+    },
+    {
+      "entity": "house",
+      "type": "spawn_on_timer",
+      "properties": {
+        "intervalMs": 1,
+        "max": 4,
+        "spawnAt": { "anchor": "random_canvas", "margin": 60 },
+        "speedMin": 0,
+        "speedMax": 0
+      }
+    }
+  ],
+
+  "interactions": [
+    { "entityA": "firefighter", "entityB": "water", "type": "collect" },
+    {
+      "entityA": "firefighter",
+      "entityB": "fire",
+      "type": "damage_on_item",
+      "options": { "item": "water", "amount": 1 }
+    },
+    { "entityA": "fire", "entityB": "house", "type": "destroy" }
+  ],
+
+  "endConditions": [
+    {
+      "id": "survived",
+      "type": "timer_elapsed",
+      "properties": { "seconds": 90 },
+      "result": "won",
+      "message": "Fire Contained! You Win!"
+    },
+    {
+      "id": "fire_out",
+      "type": "entity_property_threshold",
+      "properties": {
+        "entity": "fire",
+        "property": "size",
+        "operator": "<=",
+        "value": 0
+      },
+      "result": "won",
+      "message": "Fire Extinguished! Perfect!"
+    },
+    {
+      "id": "all_burned",
+      "type": "entity_count_threshold",
+      "properties": {
+        "entity": "house",
+        "operator": "<=",
+        "value": 0
+      },
+      "result": "lost",
+      "message": "All houses burned down!"
+    },
+    {
+      "id": "ff_down",
+      "type": "entity_property_threshold",
+      "properties": {
+        "entity": "firefighter",
+        "property": "size",
+        "operator": "<=",
+        "value": 8
+      },
+      "result": "lost",
+      "message": "Firefighter overwhelmed!"
+    }
+  ],
+
+  "ui": {
+    "statusBars": [
+      {
+        "label": "Firefighter HP",
+        "source": "entity_size",
+        "entity": "firefighter",
+        "color": "#f97316",
+        "displayMode": "percent",
+        "min": 8,
+        "max": 50
+      },
+      {
+        "label": "Water Supply",
+        "source": "entity_inventory_item",
+        "entity": "firefighter",
+        "item": "water",
+        "color": "#38bdf8",
+        "min": 0,
+        "max": 5
+      },
+      {
+        "label": "Fire Size",
+        "source": "entity_size",
+        "entity": "fire",
+        "color": "#ef4444",
+        "displayMode": "percent",
+        "min": 0,
+        "max": 55
+      },
+      {
+        "label": "Time Left",
+        "source": "timer_remaining",
+        "color": "#a855f7",
+        "displayMode": "seconds",
+        "total": 90
+      }
+    ]
+  }
+}

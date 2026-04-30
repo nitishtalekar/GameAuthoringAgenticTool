@@ -12,5 +12,28 @@
       { "target": "entityA", "property": "size", "delta": -5 },
       { "target": "entityB", "action": "destroy" }
     ]
+  },
+  "collect": {
+    "hitRadiusMultiplierB": 0.9,
+    "effects": [
+      { "target": "entityA", "action": "collect_item", "amount": 1 },
+      { "target": "entityB", "action": "destroy" }
+    ]
+  },
+  "damage_on_item": {
+    "hitRadiusMultiplierB": 0.8,
+    "effects_with_item": [
+      { "target": "entityA", "action": "consume_inventory_item" },
+      { "target": "entityB", "property": "size", "delta": -12, "clampToMin": true }
+    ],
+    "effects_without_item": [
+      { "target": "entityA", "property": "size", "delta": -3, "clampToMin": true }
+    ]
+  },
+  "destroy": {
+    "hitRadiusMultiplierB": 0.7,
+    "effects": [
+      { "target": "entityB", "action": "destroy" }
+    ]
   }
 }

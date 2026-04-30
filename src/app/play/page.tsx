@@ -23,6 +23,7 @@ interface EntityState {
   y: number;
   size: number;
   speed: number;
+  inventory: Record<string, number>;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -39,6 +40,7 @@ interface GameContext {
   instanceCounter: { current: number };
   lastSpawnMap: { current: Record<number, number> };
   onSizeChange: (entityId: string, newSize: number) => void;
+  onInventoryChange: (entityId: string, inventory: Record<string, number>) => void;
 }
 
 interface EffectContext {
@@ -48,6 +50,7 @@ interface EffectContext {
   selfDef: CONFIG;
   destroySet: Set<number>;
   ctx: GameContext;
+  options: Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------
@@ -119,7 +122,7 @@ function buildInitialStates(config: CONFIG): Record<string, EntityState[]> {
     );
     const size = eDef.initialSize ?? eDef.size ?? 20;
     states[eDef.id] = [
-      { id: eDef.id, instanceId: 0, x: pos.x, y: pos.y, size, speed: eDef.speed ?? 0 },
+      { id: eDef.id, instanceId: 0, x: pos.x, y: pos.y, size, speed: eDef.speed ?? 0, inventory: {} },
     ];
   }
   return states;
@@ -212,8 +215,27 @@ function handleSpawnOnTimer(behavior: CONFIG, behaviorIndex: number, ctx: GameCo
     y: spawnY,
     size: enemyDef.size ?? 20,
     speed: p.speedMin + Math.random() * (p.speedMax - p.speedMin),
+    inventory: {},
   });
   ctx.lastSpawnMap.current[behaviorIndex] = ctx.now;
+}
+
+function handleGrowOverTime(behavior: CONFIG, ctx: GameContext, config: CONFIG): void {
+  const p = behavior.properties;
+  const property = p.property as string;
+  const rate = p.rate as number;
+  const clampToMax = p.clampToMax as boolean | undefined;
+  const entityDef = config.entities.find((e: CONFIG) => e.id === behavior.entity);
+
+  ctx.states[behavior.entity] = ctx.states[behavior.entity].map((e) => {
+    let newVal = (e[property as keyof EntityState] as number) + rate * ctx.delta;
+    if (clampToMax) {
+      const key = `max${property.charAt(0).toUpperCase() + property.slice(1)}`;
+      const maxVal = (entityDef as Record<string, unknown>)?.[key] as number | undefined;
+      if (maxVal !== undefined) newVal = Math.min(maxVal, newVal);
+    }
+    return { ...e, [property]: newVal };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -251,9 +273,32 @@ function handleEffectPropertyDelta(ec: EffectContext): void {
   ec.ctx.onSizeChange(ec.self.id, newVal);
 }
 
+function handleEffectCollectItem(ec: EffectContext): void {
+  const itemKey = ec.other.id;
+  const amount = (ec.effect.amount as number | undefined) ?? 1;
+  const inv = ec.self.inventory;
+  const maxInv = (ec.selfDef as Record<string, unknown>)?.maxInventory as Record<string, number> | undefined;
+  const cap = maxInv?.[itemKey];
+  const current = inv[itemKey] ?? 0;
+  inv[itemKey] = cap !== undefined ? Math.min(cap, current + amount) : current + amount;
+  ec.ctx.onInventoryChange(ec.self.id, { ...inv });
+}
+
+function handleEffectConsumeInventoryItem(ec: EffectContext): void {
+  const itemKey = (ec.options?.item as string | undefined) ?? ec.other.id;
+  const amount = (ec.options?.amount as number | undefined) ?? (ec.effect.amount as number | undefined) ?? 1;
+  const inv = ec.self.inventory;
+  if ((inv[itemKey] ?? 0) >= amount) {
+    inv[itemKey] = (inv[itemKey] ?? 0) - amount;
+    ec.ctx.onInventoryChange(ec.self.id, { ...inv });
+  }
+}
+
 const effectRegistry: Record<string, (ec: EffectContext) => void> = {
   respawn_random: handleEffectRespawnRandom,
   destroy: handleEffectDestroy,
+  collect_item: handleEffectCollectItem,
+  consume_inventory_item: handleEffectConsumeInventoryItem,
 };
 
 // ---------------------------------------------------------------------------
@@ -284,6 +329,7 @@ function GameRenderer({ config, onExit }: { config: CONFIG; onExit: () => void }
   const [playerSize, setPlayerSize] = useState<number>(playerDef?.initialSize ?? playerDef?.size ?? 20);
   const [timeLeft, setTimeLeft] = useState(WIN_TIME);
   const [status, setStatus] = useState<"playing" | "won" | "lost">("playing");
+  const [inventoryState, setInventoryState] = useState<Record<string, Record<string, number>>>({});
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => (keysRef.current[e.key.toLowerCase()] = true);
@@ -306,6 +352,7 @@ function GameRenderer({ config, onExit }: { config: CONFIG; onExit: () => void }
     setPlayerSize(playerDef?.initialSize ?? playerDef?.size ?? 20);
     setTimeLeft(WIN_TIME);
     setStatus("playing");
+    setInventoryState({});
   };
 
   useEffect(() => {
@@ -332,35 +379,56 @@ function GameRenderer({ config, onExit }: { config: CONFIG; onExit: () => void }
           onSizeChange: (id, val) => {
             if (playerDef && id === playerDef.id) setPlayerSize(val);
           },
+          onInventoryChange: (id, inv) => {
+            setInventoryState((prev) => ({ ...prev, [id]: inv }));
+          },
         };
 
         config.behaviors.forEach((behavior: CONFIG, i: number) => {
           if (behavior.type === "player_controlled") handlePlayerControlled(behavior, gameCtx);
           else if (behavior.type === "chase") handleChase(behavior, gameCtx);
           else if (behavior.type === "spawn_on_timer") handleSpawnOnTimer(behavior, i, gameCtx, config);
+          else if (behavior.type === "grow_over_time") handleGrowOverTime(behavior, gameCtx, config);
         });
 
         for (const interaction of config.interactions) {
-          const interactionDef = INTERACTION_TYPES[interaction.type as keyof typeof INTERACTION_TYPES];
+          const interactionDef = INTERACTION_TYPES[interaction.type as keyof typeof INTERACTION_TYPES] as CONFIG;
           if (!interactionDef) continue;
           const groupA = states[interaction.entityA];
           const groupB = states[interaction.entityB];
           if (!groupA || !groupB) continue;
+          const destroyA = new Set<number>();
           const destroyB = new Set<number>();
+          const interactionOptions = (interaction.options ?? {}) as Record<string, unknown>;
+
           for (const a of groupA) {
             for (const b of groupB) {
-              if (destroyB.has(b.instanceId)) continue;
+              if (destroyA.has(a.instanceId) || destroyB.has(b.instanceId)) continue;
               if (dist(a, b) >= a.size + b.size * interactionDef.hitRadiusMultiplierB) continue;
-              for (const effect of interactionDef.effects) {
+
+              // damage_on_item: choose effect list based on whether entityA has the required item
+              let effectList: CONFIG[];
+              if ("effects_with_item" in interactionDef) {
+                const item = (interactionOptions.item as string | undefined) ?? "";
+                const amount = (interactionOptions.amount as number | undefined) ?? 1;
+                const hasItem = (a.inventory[item] ?? 0) >= amount;
+                effectList = hasItem ? interactionDef.effects_with_item : interactionDef.effects_without_item;
+              } else {
+                effectList = interactionDef.effects;
+              }
+
+              for (const effect of effectList) {
                 const self = effect.target === "entityA" ? a : b;
                 const other = effect.target === "entityA" ? b : a;
                 const selfDef = config.entities.find((e: CONFIG) => e.id === self.id);
+                const destroySet = effect.target === "entityA" ? destroyA : destroyB;
                 const ec: EffectContext = {
                   self, other,
                   effect: effect as Record<string, unknown>,
                   selfDef,
-                  destroySet: destroyB,
+                  destroySet,
                   ctx: gameCtx,
+                  options: interactionOptions,
                 };
                 if ("action" in effect) effectRegistry[effect.action as string]?.(ec);
                 else if ("delta" in effect) handleEffectPropertyDelta(ec);
@@ -370,6 +438,11 @@ function GameRenderer({ config, onExit }: { config: CONFIG; onExit: () => void }
           if (destroyB.size > 0) {
             states[interaction.entityB] = states[interaction.entityB].filter(
               (e) => !destroyB.has(e.instanceId)
+            );
+          }
+          if (destroyA.size > 0) {
+            states[interaction.entityA] = states[interaction.entityA].filter(
+              (e) => !destroyA.has(e.instanceId)
             );
           }
         }
@@ -390,6 +463,15 @@ function GameRenderer({ config, onExit }: { config: CONFIG; onExit: () => void }
                 p.operator === ">"  ? val >  p.value :
                 val === p.value;
             }
+          } else if (cond.type === "entity_count_threshold") {
+            const p = cond.properties as { entity: string; operator: string; value: number };
+            const count = states[p.entity]?.length ?? 0;
+            triggered =
+              p.operator === "<=" ? count <= p.value :
+              p.operator === "<"  ? count <  p.value :
+              p.operator === ">=" ? count >= p.value :
+              p.operator === ">"  ? count >  p.value :
+              count === p.value;
           }
           if (triggered) {
             gameOverRef.current = true;
@@ -447,6 +529,11 @@ function GameRenderer({ config, onExit }: { config: CONFIG; onExit: () => void }
     } else if (bar.source === "timer_remaining") {
       pct = (timeLeft / bar.total) * 100;
       display = `${Math.ceil(timeLeft)}s`;
+    } else if (bar.source === "entity_inventory_item") {
+      const inv = inventoryState[bar.entity ?? ""] ?? statesRef.current[bar.entity ?? ""]?.[0]?.inventory ?? {};
+      const count = inv[bar.item ?? ""] ?? 0;
+      pct = bar.max > 0 ? (count / bar.max) * 100 : 0;
+      display = `${count}`;
     }
     return { label: bar.label, color: bar.color, pct, display };
   });
