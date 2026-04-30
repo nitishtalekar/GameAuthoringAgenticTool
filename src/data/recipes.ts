@@ -23,6 +23,16 @@ export const WIN_RECIPES: WinRecipe[] = [
     description: "Win by growing the player entity beyond a threshold size via consuming other entities.",
     requires: "consume",
   },
+  {
+    name: "Neutralize Threat",
+    description: "Win by reducing a threat entity's size (or count) to zero using a collected resource (e.g. extinguish fire with water).",
+    requires: "damage_on_item",
+  },
+  {
+    name: "Protect All Assets",
+    description: "Win by keeping all protected entities alive until the timer expires.",
+    requires: null,
+  },
 ];
 
 export const LOSE_RECIPES: LoseRecipe[] = [
@@ -34,6 +44,16 @@ export const LOSE_RECIPES: LoseRecipe[] = [
   {
     name: "Timer Expired",
     description: "Lose when the countdown timer reaches zero.",
+    requires: null,
+  },
+  {
+    name: "Assets Destroyed",
+    description: "Lose when all instances of a protected entity are destroyed by a threat (e.g. all houses burned down).",
+    requires: "destroy",
+  },
+  {
+    name: "Player Overwhelmed",
+    description: "Lose when the player entity's size falls to its minimum due to contact with a growing threat.",
     requires: null,
   },
 ];

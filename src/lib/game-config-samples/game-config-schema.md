@@ -35,6 +35,15 @@
 
 ---
 
+### `grow_over_time`
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `properties.property` | `"size"` | yes | Property to grow (`size` is the only supported value) |
+| `properties.rate` | number | yes | Amount added per second |
+| `properties.clampToMax` | boolean | no | Stop growing at entity `maxSize` (default: `true`) |
+
+---
+
 ## Interactions
 
 ### `consume`
@@ -49,6 +58,29 @@
 |---|---|
 | Hit threshold | `dist < sizeA + sizeB * 0.65` |
 | Effect on A | `size -= 5` |
+| Effect on B | Instance destroyed and removed |
+
+### `collect`
+| | Value |
+|---|---|
+| Hit threshold | `dist < sizeA + sizeB * 0.8` |
+| Effect on A | Adds one unit of entity B's id to A's inventory (requires `maxInventory` set on A) |
+| Effect on B | Instance destroyed and removed |
+
+### `damage_on_item`
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `options.item` | string | yes | Inventory item id that must be present on entity A |
+| `options.amount` | number | yes | Units of the item consumed per hit |
+| Hit threshold | `dist < sizeA + sizeB * 0.65` | | |
+| Effect on A | Consumes `amount` units of the specified item from inventory |
+| Effect on B | Instance destroyed and removed |
+
+### `destroy`
+| | Value |
+|---|---|
+| Hit threshold | `dist < sizeA + sizeB * 0.8` |
+| Effect on A | No effect |
 | Effect on B | Instance destroyed and removed |
 
 ---
@@ -72,6 +104,14 @@ All end conditions share these common fields:
 ### `entity_property_threshold`
 | Property | Type | Required | Description |
 |---|---|---|---|
+| `properties.entity` | string | yes | Entity id to observe |
 | `properties.property` | `"size"` | yes | Property to compare (`size` is the only one currently tracked) |
+| `properties.operator` | `"<="` \| `"<"` \| `">="` \| `">"` \| `"="` | yes | Comparison operator |
+| `properties.value` | number | yes | Threshold value |
+
+### `entity_count_threshold`
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `properties.entity` | string | yes | Entity id whose live instance count is observed |
 | `properties.operator` | `"<="` \| `"<"` \| `">="` \| `">"` \| `"="` | yes | Comparison operator |
 | `properties.value` | number | yes | Threshold value |
