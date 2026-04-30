@@ -2,6 +2,11 @@
 
 import { useState, useCallback } from "react";
 import type { GameState, StepResponse } from "@/lib/game/types";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import LinearProgress from "@mui/material/LinearProgress";
+import Typography from "@mui/material/Typography";
+import Alert from "@mui/material/Alert";
 
 // --- Step metadata ---
 
@@ -67,15 +72,16 @@ function StepCard({
           gap: 8,
         }}
       >
-        <span
-          style={{
+        <Box
+          component="span"
+          sx={{
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",
             width: 22,
             height: 22,
             borderRadius: "50%",
-            background: "#2563eb",
+            bgcolor: "#2563eb",
             color: "#fff",
             fontSize: 11,
             fontWeight: 700,
@@ -83,7 +89,7 @@ function StepCard({
           }}
         >
           {stepNumber}
-        </span>
+        </Box>
         {title}
       </summary>
       <pre
@@ -180,40 +186,44 @@ export default function Home() {
   };
 
   return (
-    <main
-      style={{
+    <Box
+      component="main"
+      sx={{
         maxWidth: 720,
-        margin: "0 auto",
-        padding: "40px 16px 80px",
+        mx: "auto",
+        px: 2,
+        pt: 5,
+        pb: 10,
         fontFamily: "system-ui, -apple-system, sans-serif",
         color: "#1a1a2e",
       }}
     >
       {/* Header */}
-      <div style={{ marginBottom: 32 }}>
-        <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, color: "white" }}>
+      <Box sx={{ mb: 2 }}>
+        <Typography variant="h4" sx={{ fontWeight: 800, color: "white" }}>
           Game-Authoring-Tool
-        </h1>
-        <p style={{ margin: "6px 0 0", color: "white", fontSize: 15 }}>
+        </Typography>
+        <Typography sx={{ mt: 1, color: "white", fontSize: 15 }}>
           Transform a news article into a playable arcade game configuration
-        </p>
-      </div>
+        </Typography>
+      </Box>
 
       {/* Input section (only shown before starting) */}
       {currentStep === 0 && (
-        <section style={{ marginBottom: 24 }}>
-          <label
+        <Box component="section" sx={{ mb: 3 }}>
+          <Typography
+            component="label"
             htmlFor="concept-input"
-            style={{ display: "block", fontWeight: 600, marginBottom: 8, fontSize: 14, color: "white" }}
+            sx={{ display: "block", fontWeight: 600, mb: 1, fontSize: 14, color: "white" }}
           >
             Paste a news article or describe your concept in plain language
-          </label>
-          <p style={{ margin: "0 0 10px", fontSize: 13, color: "#aaa" }}>
+          </Typography>
+          {/* <Typography sx={{ mb: 1.25, fontSize: 13, color: "#aaa" }}>
             Article example: &quot;On the six month anniversary of the Occupy Wall Street movement, protesters returned to New York&apos;s Zuccotti Park and several were arrested. The occupiers are obstructing Wall Street and are being arrested by police, but Wall Street is also growing the occupy movement.&quot;
-          </p>
-          <p style={{ margin: "0 0 10px", fontSize: 13, color: "#aaa" }}>
+          </Typography>
+          <Typography sx={{ mb: 1.25, fontSize: 13, color: "#aaa" }}>
             Short concept map also works: &quot;Police arrests Occupier. Occupier obstructs WallStreet. WallStreet grows Occupier.&quot;
-          </p>
+          </Typography> */}
           <textarea
             id="concept-input"
             value={inputText}
@@ -232,106 +242,82 @@ export default function Home() {
               lineHeight: 1.5,
             }}
           />
-          <button
+          <Button
+            variant="contained"
             onClick={handleStart}
             disabled={!inputText.trim() || isLoading}
-            style={{
-              marginTop: 12,
-              padding: "10px 20px",
-              fontSize: 14,
+            sx={{
+              mt: 1.5,
               fontWeight: 600,
-              background: inputText.trim() && !isLoading ? "#2563eb" : "#a0aec0",
-              color: "#fff",
-              border: "none",
-              borderRadius: 6,
-              cursor: inputText.trim() && !isLoading ? "pointer" : "not-allowed",
+              bgcolor: "#2563eb",
+              "&:hover": { bgcolor: "#1d4ed8" },
+              "&:disabled": { bgcolor: "#a0aec0" },
             }}
           >
             {isLoading
               ? `Running Step 1 of ${TOTAL_STEPS}...`
               : `Start — Step 1 of ${TOTAL_STEPS}: ${STEP_LABELS[1]?.title ?? ""}`}
-          </button>
-        </section>
+          </Button>
+        </Box>
       )}
 
       {/* Progress bar (shown once started) */}
       {currentStep >= 1 && (
-        <div style={{ marginBottom: 24 }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              marginBottom: 8,
-            }}
-          >
-            <span style={{ fontSize: 13, fontWeight: 600, color: "#2563eb" }}>
+        <Box sx={{ mb: 3 }}>
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 1 }}>
+            <Typography sx={{ fontSize: 13, fontWeight: 600, color: "#2563eb" }}>
               {isLoading
                 ? `Running Step ${currentStep + 1} of ${TOTAL_STEPS}...`
                 : currentStep < TOTAL_STEPS
                 ? `Step ${currentStep} of ${TOTAL_STEPS} complete`
                 : "All steps complete"}
-            </span>
-            <button
+            </Typography>
+            <Button
+              variant="outlined"
+              size="small"
               onClick={handleReset}
-              style={{
-                padding: "4px 10px",
-                fontSize: 12,
-                background: "transparent",
-                border: "1px solid #ccc",
-                borderRadius: 4,
-                cursor: "pointer",
-                color: "#666",
-              }}
+              sx={{ fontSize: 12, color: "#666", borderColor: "#ccc", "&:hover": { borderColor: "#aaa" } }}
             >
               Start over
-            </button>
-          </div>
-          <div
-            style={{
+            </Button>
+          </Box>
+          <LinearProgress
+            variant="determinate"
+            value={(currentStep / TOTAL_STEPS) * 100}
+            sx={{
               height: 6,
-              background: "#e0e0e0",
               borderRadius: 3,
-              overflow: "hidden",
+              bgcolor: "#e0e0e0",
+              "& .MuiLinearProgress-bar": { bgcolor: "#2563eb", borderRadius: 3, transition: "transform 0.4s ease" },
             }}
-          >
-            <div
-              style={{
-                height: "100%",
-                background: "#2563eb",
-                borderRadius: 3,
-                width: `${(currentStep / TOTAL_STEPS) * 100}%`,
-                transition: "width 0.4s ease",
-              }}
-            />
-          </div>
+          />
           {!isLoading && currentStep < TOTAL_STEPS && (
-            <p style={{ margin: "8px 0 0", fontSize: 13, color: "#666" }}>
+            <Typography sx={{ mt: 1, fontSize: 13, color: "#666" }}>
               Next: Step {currentStep + 1} — {STEP_LABELS[currentStep + 1]?.description}
-            </p>
+            </Typography>
           )}
-        </div>
+        </Box>
       )}
 
       {/* Original article display */}
       {currentStep >= 1 && gameState.initialInput && (
-        <div
-          style={{
-            marginBottom: 20,
-            padding: "10px 14px",
-            background: "#f9fafb",
-            borderRadius: 6,
+        <Box
+          sx={{
+            mb: 2.5,
+            p: "10px 14px",
+            bgcolor: "#f9fafb",
+            borderRadius: 1.5,
             border: "1px solid #e5e7eb",
             fontSize: 13,
             color: "#444",
           }}
         >
           <strong>Input:</strong> {gameState.initialInput}
-        </div>
+        </Box>
       )}
 
       {/* Step cards */}
-      <div style={{ marginBottom: 24 }}>
+      <Box sx={{ mb: 3 }}>
         {gameState.conceptData && (
           <StepCard
             stepNumber={1}
@@ -390,15 +376,16 @@ export default function Home() {
                 gap: 8,
               }}
             >
-              <span
-                style={{
+              <Box
+                component="span"
+                sx={{
                   display: "inline-flex",
                   alignItems: "center",
                   justifyContent: "center",
                   width: 22,
                   height: 22,
                   borderRadius: "50%",
-                  background: "#16a34a",
+                  bgcolor: "#16a34a",
                   color: "#fff",
                   fontSize: 11,
                   fontWeight: 700,
@@ -406,7 +393,7 @@ export default function Home() {
                 }}
               >
                 5
-              </span>
+              </Box>
               Game Configuration JSON — Final Output
             </summary>
             <pre
@@ -424,105 +411,68 @@ export default function Home() {
             >
               {gameState.gameJsonOutput}
             </pre>
-            <div
-              style={{
-                padding: "10px 14px",
-                background: "#f9fafb",
+            <Box
+              sx={{
+                p: "10px 14px",
+                bgcolor: "#f9fafb",
                 borderTop: "1px solid #e5e7eb",
                 display: "flex",
-                gap: 8,
+                gap: 1,
               }}
             >
-              <button
+              <Button
+                variant="contained"
                 onClick={handleCopyJson}
-                style={{
-                  padding: "8px 16px",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  background: "#2563eb",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: 5,
-                  cursor: "pointer",
-                }}
+                sx={{ fontSize: 13, fontWeight: 600, bgcolor: "#2563eb", "&:hover": { bgcolor: "#1d4ed8" } }}
               >
                 Copy JSON
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="contained"
                 onClick={handleDownloadJson}
-                style={{
-                  padding: "8px 16px",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  background: "#16a34a",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: 5,
-                  cursor: "pointer",
-                }}
+                sx={{ fontSize: 13, fontWeight: 600, bgcolor: "#16a34a", "&:hover": { bgcolor: "#15803d" } }}
               >
                 Download JSON
-              </button>
-            </div>
+              </Button>
+            </Box>
           </details>
         )}
-      </div>
+      </Box>
 
       {/* "Next Step" button */}
       {currentStep >= 1 && currentStep < TOTAL_STEPS && (
-        <div style={{ marginBottom: 20 }}>
-          <button
+        <Box sx={{ mb: 2.5 }}>
+          <Button
+            variant="contained"
+            fullWidth
             onClick={handleNextStep}
             disabled={isLoading}
-            style={{
-              padding: "12px 24px",
+            sx={{
+              py: 1.5,
               fontSize: 15,
               fontWeight: 700,
-              background: isLoading ? "#a0aec0" : "#2563eb",
-              color: "#fff",
-              border: "none",
-              borderRadius: 7,
-              cursor: isLoading ? "not-allowed" : "pointer",
-              width: "100%",
+              bgcolor: "#2563eb",
+              "&:hover": { bgcolor: "#1d4ed8" },
+              "&:disabled": { bgcolor: "#a0aec0" },
             }}
           >
             {isLoading
               ? `Running Step ${currentStep + 1} of ${TOTAL_STEPS}: ${STEP_LABELS[currentStep + 1]?.title ?? ""}...`
               : `Next — Step ${currentStep + 1} of ${TOTAL_STEPS}: ${STEP_LABELS[currentStep + 1]?.title ?? ""}`}
-          </button>
-        </div>
+          </Button>
+        </Box>
       )}
 
       {/* Error display */}
       {errorMessage && (
-        <div
-          style={{
-            padding: "12px 16px",
-            background: "#fef2f2",
-            border: "1px solid #fca5a5",
-            borderRadius: 6,
-            color: "#991b1b",
-            fontSize: 13,
-            marginBottom: 16,
-          }}
+        <Alert
+          severity="error"
+          onClose={() => setErrorMessage(null)}
+          sx={{ mb: 2, fontSize: 13 }}
         >
-          <strong>Error:</strong> {errorMessage}
-          <button
-            onClick={() => setErrorMessage(null)}
-            style={{
-              marginLeft: 12,
-              fontSize: 12,
-              background: "transparent",
-              border: "none",
-              cursor: "pointer",
-              color: "#991b1b",
-              textDecoration: "underline",
-            }}
-          >
-            Dismiss
-          </button>
-        </div>
+          {errorMessage}
+        </Alert>
       )}
-    </main>
+    </Box>
   );
 }
