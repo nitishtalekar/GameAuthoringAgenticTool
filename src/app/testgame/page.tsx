@@ -16,11 +16,37 @@ type Vec = { x: number; y: number };
 
 interface EntityState {
   id: string;
-  instanceId: number; // for multi-instance entities (e.g. hunger)
+  instanceId: number;
   x: number;
   y: number;
   size: number;
   speed: number;
+}
+
+// ---------------------------------------------------------------------------
+// Context types passed into handlers — keeps handlers pure and module-level
+// ---------------------------------------------------------------------------
+
+interface GameContext {
+  states: Record<string, EntityState[]>;
+  delta: number;
+  now: number;
+  elapsed: number;
+  remaining: number;
+  canvas: typeof CONFIG.meta.canvas;
+  keys: Record<string, boolean>;
+  instanceCounter: { current: number };
+  lastSpawn: { current: number };
+  onSizeChange: (entityId: string, newSize: number) => void;
+}
+
+interface EffectContext {
+  self: EntityState;
+  other: EntityState;
+  effect: Record<string, unknown>;
+  selfDef: (typeof CONFIG.entities)[number];
+  destroySet: Set<number>;
+  ctx: GameContext;
 }
 
 // ---------------------------------------------------------------------------
@@ -37,7 +63,6 @@ function resolveInitialPosition(
 ): Vec {
   if (anchor === "center") return { x: canvas.width / 2, y: canvas.height / 2 };
   if (anchor === "fixed" && x !== undefined && y !== undefined) return { x, y };
-  // "none" / "near_entity" handled at spawn time
   return { x: 0, y: 0 };
 }
 
@@ -111,6 +136,225 @@ function buildInitialStates(): Record<string, EntityState[]> {
 }
 
 // ---------------------------------------------------------------------------
+// Behavior handlers
+// To add a new behavior: write a function here, then add it to behaviorRegistry.
+// ---------------------------------------------------------------------------
+
+function handlePlayerControlled(
+  behavior: (typeof CONFIG.behaviors)[number],
+  ctx: GameContext
+): void {
+  const entity = ctx.states[behavior.entity]?.[0];
+  if (!entity) return;
+
+  const k = ctx.keys;
+  let dx = 0;
+  let dy = 0;
+  if (k["w"] || k["arrowup"])    dy -= 1;
+  if (k["s"] || k["arrowdown"])  dy += 1;
+  if (k["a"] || k["arrowleft"])  dx -= 1;
+  if (k["d"] || k["arrowright"]) dx += 1;
+
+  const len = Math.hypot(dx, dy) || 1;
+  entity.x += (dx / len) * entity.speed * ctx.delta;
+  entity.y += (dy / len) * entity.speed * ctx.delta;
+
+  const clamp = (behavior as { clampToCanvas?: boolean; properties?: { clampToCanvas?: boolean } })
+    .clampToCanvas ??
+    (behavior as { properties?: { clampToCanvas?: boolean } }).properties?.clampToCanvas ??
+    true;
+
+  if (clamp) {
+    entity.x = Math.max(entity.size, Math.min(ctx.canvas.width - entity.size, entity.x));
+    entity.y = Math.max(entity.size, Math.min(ctx.canvas.height - entity.size, entity.y));
+  }
+}
+
+function handleChase(
+  behavior: (typeof CONFIG.behaviors)[number],
+  ctx: GameContext
+): void {
+  const props = behavior.properties as { target: string };
+  const target = ctx.states[props.target]?.[0];
+  if (!target) return;
+
+  ctx.states[behavior.entity] = ctx.states[behavior.entity].map((e) => {
+    const angle = Math.atan2(target.y - e.y, target.x - e.x);
+    return {
+      ...e,
+      x: e.x + Math.cos(angle) * e.speed * ctx.delta,
+      y: e.y + Math.sin(angle) * e.speed * ctx.delta,
+    };
+  });
+}
+
+function handleSpawnOnTimer(
+  behavior: (typeof CONFIG.behaviors)[number],
+  ctx: GameContext
+): void {
+  const p = behavior.properties as {
+    intervalMs: number;
+    spawnAt: { anchor: string; entity: string; offsetRadius: number };
+    speedMin: number;
+    speedMax: number;
+  };
+
+  if (ctx.now - ctx.lastSpawn.current <= p.intervalMs) return;
+
+  const enemyDef = CONFIG.entities.find((e) => e.id === behavior.entity)!;
+  let spawnX = ctx.canvas.width / 2;
+  let spawnY = ctx.canvas.height / 2;
+
+  if (p.spawnAt.anchor === "near_entity") {
+    const anchor = ctx.states[p.spawnAt.entity]?.[0];
+    const angle = Math.random() * Math.PI * 2;
+    spawnX = (anchor?.x ?? spawnX) + Math.cos(angle) * p.spawnAt.offsetRadius;
+    spawnY = (anchor?.y ?? spawnY) + Math.sin(angle) * p.spawnAt.offsetRadius;
+  }
+  // Add new spawn anchors here (e.g. "random_edge", "fixed") without touching the loop
+
+  ctx.states[behavior.entity].push({
+    id: behavior.entity,
+    instanceId: ctx.instanceCounter.current++,
+    x: spawnX,
+    y: spawnY,
+    size: enemyDef.size as number,
+    speed: p.speedMin + Math.random() * (p.speedMax - p.speedMin),
+  });
+
+  ctx.lastSpawn.current = ctx.now;
+}
+
+// ---------------------------------------------------------------------------
+// Effect handlers
+// To add a new action effect: write a function here, then add it to effectRegistry.
+// To add support for a new entity property delta: it's automatic — handleEffectPropertyDelta
+// reads effect.property as a key into EntityState, so any numeric field works.
+// ---------------------------------------------------------------------------
+
+function handleEffectRespawnRandom(ec: EffectContext): void {
+  const margin = (ec.effect.margin as number | undefined) ?? 40;
+  const pos = randomInCanvas(margin, ec.ctx.canvas);
+  ec.self.x = pos.x;
+  ec.self.y = pos.y;
+}
+
+function handleEffectDestroy(ec: EffectContext): void {
+  ec.destroySet.add(ec.self.instanceId);
+}
+
+function handleEffectPropertyDelta(ec: EffectContext): void {
+  const property = ec.effect.property as keyof EntityState;
+  const delta = ec.effect.delta as number;
+  const clampToMax = ec.effect.clampToMax as boolean | undefined;
+  const clampToMin = ec.effect.clampToMin as boolean | undefined;
+
+  let newVal = (ec.self[property] as number) + delta;
+
+  if (clampToMax && delta > 0) {
+    const maxVal = (ec.selfDef as Record<string, unknown>)[`max${property.charAt(0).toUpperCase() + property.slice(1)}`] as number | undefined;
+    if (maxVal !== undefined) newVal = Math.min(maxVal, newVal);
+  }
+  if (clampToMin && delta < 0) {
+    const minVal = (ec.selfDef as Record<string, unknown>)[`min${property.charAt(0).toUpperCase() + property.slice(1)}`] as number | undefined;
+    if (minVal !== undefined) newVal = Math.max(minVal, newVal);
+  }
+
+  (ec.self as unknown as Record<string, unknown>)[property as string] = newVal;
+  ec.ctx.onSizeChange(ec.self.id, newVal);
+}
+
+// ---------------------------------------------------------------------------
+// End condition checkers
+// To add a new condition type: write a function here, then add it to endConditionRegistry.
+// ---------------------------------------------------------------------------
+
+function checkTimerElapsed(
+  _cond: (typeof CONFIG.endConditions)[number],
+  ctx: GameContext
+): boolean {
+  return ctx.remaining <= 0;
+}
+
+function checkEntityPropertyThreshold(
+  cond: (typeof CONFIG.endConditions)[number],
+  ctx: GameContext
+): boolean {
+  const p = cond.properties as { entity: string; property: string; operator: string; value: number };
+  const target = ctx.states[p.entity]?.[0];
+  if (!target) return false;
+
+  const val = target[p.property as keyof EntityState] as number;
+  const op = p.operator;
+  return (
+    op === "<=" ? val <= p.value :
+    op === "<"  ? val <  p.value :
+    op === ">=" ? val >= p.value :
+    op === ">"  ? val >  p.value :
+    val === p.value
+  );
+}
+
+// ---------------------------------------------------------------------------
+// UI bar source handlers
+// To add a new bar source type: write a function here, then add it to barSourceRegistry.
+// ---------------------------------------------------------------------------
+
+function computeEntitySizeBar(
+  bar: (typeof CONFIG.ui.statusBars)[number],
+  states: Record<string, EntityState[]>,
+  _timeLeft: number
+): { pct: number; display: string } {
+  const b = bar as { entity?: string; min?: number; max?: number };
+  const size = states[b.entity ?? ""]?.[0]?.size ?? b.min ?? 0;
+  const pct = ((Math.max(b.min!, size) - b.min!) / (b.max! - b.min!)) * 100;
+  return { pct, display: `${Math.max(0, Math.round(pct))}%` };
+}
+
+function computeTimerRemainingBar(
+  bar: (typeof CONFIG.ui.statusBars)[number],
+  _states: Record<string, EntityState[]>,
+  timeLeft: number
+): { pct: number; display: string } {
+  const b = bar as { total?: number };
+  const pct = (timeLeft / b.total!) * 100;
+  return { pct, display: `${Math.ceil(timeLeft)}s` };
+}
+
+// ---------------------------------------------------------------------------
+// Registries — the only place that needs to change when adding new types
+// ---------------------------------------------------------------------------
+
+type BehaviorHandler = (behavior: (typeof CONFIG.behaviors)[number], ctx: GameContext) => void;
+const behaviorRegistry: Record<string, BehaviorHandler> = {
+  player_controlled: handlePlayerControlled,
+  chase: handleChase,
+  spawn_on_timer: handleSpawnOnTimer,
+};
+
+type EffectHandler = (ec: EffectContext) => void;
+const effectRegistry: Record<string, EffectHandler> = {
+  respawn_random: handleEffectRespawnRandom,
+  destroy: handleEffectDestroy,
+};
+
+type EndConditionChecker = (cond: (typeof CONFIG.endConditions)[number], ctx: GameContext) => boolean;
+const endConditionRegistry: Record<string, EndConditionChecker> = {
+  timer_elapsed: checkTimerElapsed,
+  entity_property_threshold: checkEntityPropertyThreshold,
+};
+
+type BarSourceHandler = (
+  bar: (typeof CONFIG.ui.statusBars)[number],
+  states: Record<string, EntityState[]>,
+  timeLeft: number
+) => { pct: number; display: string };
+const barSourceRegistry: Record<string, BarSourceHandler> = {
+  entity_size: computeEntitySizeBar,
+  timer_remaining: computeTimerRemainingBar,
+};
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -118,15 +362,12 @@ export default function Page() {
   const canvas = CONFIG.meta.canvas;
   const playerBehavior = CONFIG.behaviors.find((b) => b.type === "player_controlled")!;
   const playerDef = CONFIG.entities.find((e) => e.id === playerBehavior.entity)!;
-  const winTimer = CONFIG.endConditions.find((w) => w.type === "timer_elapsed")!;
-  const WIN_TIME = (winTimer.properties as { seconds: number }).seconds;
-  const MAX_SIZE = playerDef.maxSize as number;
+  const WIN_TIME = (CONFIG.endConditions.find((c) => c.type === "timer_elapsed")!.properties as { seconds: number }).seconds;
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const keysRef = useRef<Record<string, boolean>>({});
   const animRef = useRef<number | null>(null);
 
-  // All live entity instances
   const statesRef = useRef<Record<string, EntityState[]>>(buildInitialStates());
   const lastSpawnRef = useRef(0);
   const instanceCounterRef = useRef(1);
@@ -134,7 +375,6 @@ export default function Page() {
   const lastTimeRef = useRef<number | null>(null);
   const gameOverRef = useRef(false);
 
-  // React state for UI bars and overlay
   const [playerSize, setPlayerSize] = useState(playerDef.initialSize as number);
   const [timeLeft, setTimeLeft] = useState(WIN_TIME);
   const [status, setStatus] = useState<"playing" | "won" | "lost">("playing");
@@ -189,116 +429,63 @@ export default function Page() {
       if (!gameOverRef.current) {
         const states = statesRef.current;
 
-        // ── Player movement ──────────────────────────────────────────────
-        const player = states[playerDef.id][0];
-        const k = keysRef.current;
+        const gameCtx: GameContext = {
+          states,
+          delta,
+          now,
+          elapsed,
+          remaining,
+          canvas,
+          keys: keysRef.current,
+          instanceCounter: instanceCounterRef,
+          lastSpawn: lastSpawnRef,
+          onSizeChange: (id, val) => {
+            if (id === playerDef.id) setPlayerSize(val);
+          },
+        };
 
-        let dx = 0;
-        let dy = 0;
-        if (k["w"] || k["arrowup"])    dy -= 1;
-        if (k["s"] || k["arrowdown"])  dy += 1;
-        if (k["a"] || k["arrowleft"])  dx -= 1;
-        if (k["d"] || k["arrowright"]) dx += 1;
-
-        const len = Math.hypot(dx, dy) || 1;
-        player.x += (dx / len) * player.speed * delta;
-        player.y += (dy / len) * player.speed * delta;
-        player.x = Math.max(player.size, Math.min(canvas.width - player.size, player.x));
-        player.y = Math.max(player.size, Math.min(canvas.height - player.size, player.y));
-
-        // ── Spawn enemies ────────────────────────────────────────────────
-        const spawnBehavior = CONFIG.behaviors.find((b) => b.type === "spawn_on_timer");
-        if (spawnBehavior) {
-          const p = spawnBehavior.properties as {
-            intervalMs: number;
-            spawnAt: { anchor: string; entity: string; offsetRadius: number };
-            speedMin: number;
-            speedMax: number;
-          };
-          if (now - lastSpawnRef.current > p.intervalMs) {
-            const anchorEntity = states[p.spawnAt.entity]?.[0];
-            const angle = Math.random() * Math.PI * 2;
-            const enemyDef = CONFIG.entities.find((e) => e.id === spawnBehavior.entity)!;
-
-            states[spawnBehavior.entity].push({
-              id: spawnBehavior.entity,
-              instanceId: instanceCounterRef.current++,
-              x: (anchorEntity?.x ?? canvas.width / 2) + Math.cos(angle) * p.spawnAt.offsetRadius,
-              y: (anchorEntity?.y ?? canvas.height / 2) + Math.sin(angle) * p.spawnAt.offsetRadius,
-              size: enemyDef.size as number,
-              speed: p.speedMin + Math.random() * (p.speedMax - p.speedMin),
-            });
-            lastSpawnRef.current = now;
-          }
+        // ── Behavior dispatch ─────────────────────────────────────────────
+        // To add a new behavior: write a handler function above, add to behaviorRegistry.
+        for (const behavior of CONFIG.behaviors) {
+          behaviorRegistry[behavior.type as string]?.(behavior, gameCtx);
         }
 
-        // ── Chase behavior ────────────────────────────────────────────────
-        const chaseBehavior = CONFIG.behaviors.find((b) => b.type === "chase");
-
-        if (chaseBehavior) {
-          const chaseProps = chaseBehavior.properties as { target: string };
-          const target = states[chaseProps.target]?.[0];
-          if (target) {
-            states[chaseBehavior.entity] = states[chaseBehavior.entity].map((e) => {
-              const angle = Math.atan2(target.y - e.y, target.x - e.x);
-              return {
-                ...e,
-                x: e.x + Math.cos(angle) * e.speed * delta,
-                y: e.y + Math.sin(angle) * e.speed * delta,
-              };
-            });
-          }
-        }
-
-        // ── Interactions ─────────────────────────────────────────────────
+        // ── Interaction dispatch ──────────────────────────────────────────
+        // Fully data-driven: effect actions and property deltas are resolved
+        // from interaction-types.json via effectRegistry / handleEffectPropertyDelta.
         for (const interaction of CONFIG.interactions) {
-          const groupA = states[interaction.entityA];
-          const groupB = states[interaction.entityB];
-          if (!groupA || !groupB) continue;
-
           const interactionDef =
             INTERACTION_TYPES[interaction.type as keyof typeof INTERACTION_TYPES];
           if (!interactionDef) continue;
+
+          const groupA = states[interaction.entityA];
+          const groupB = states[interaction.entityB];
+          if (!groupA || !groupB) continue;
 
           const destroyB = new Set<number>();
 
           for (const a of groupA) {
             for (const b of groupB) {
               if (destroyB.has(b.instanceId)) continue;
-
-              const hit = dist(a, b) < a.size + b.size * interactionDef.hitRadiusMultiplierB;
-              if (!hit) continue;
+              if (dist(a, b) >= a.size + b.size * interactionDef.hitRadiusMultiplierB) continue;
 
               for (const effect of interactionDef.effects) {
-                if (effect.target === "entityA") {
-                  if (effect.action === "respawn_random") {
-                    const margin =
-                      (effect as { target: string; action: string; margin?: number }).margin ?? 40;
-                    const pos = randomInCanvas(margin, canvas);
-                    a.x = pos.x;
-                    a.y = pos.y;
-                  } else if ("delta" in effect && effect.property === "size") {
-                    const d = effect.delta as number;
-                    const clampMax =
-                      (effect as { clampToMax?: boolean }).clampToMax && d > 0;
-                    a.size = clampMax
-                      ? Math.min(MAX_SIZE, a.size + d)
-                      : a.size + d;
-                    setPlayerSize(a.size);
-                  }
-                } else if (effect.target === "entityB") {
-                  if (effect.action === "respawn_random") {
-                    const margin =
-                      (effect as { target: string; action: string; margin?: number }).margin ?? 40;
-                    const pos = randomInCanvas(margin, canvas);
-                    b.x = pos.x;
-                    b.y = pos.y;
-                  } else if (effect.action === "destroy") {
-                    destroyB.add(b.instanceId);
-                  } else if ("delta" in effect && effect.property === "size") {
-                    b.size += effect.delta as number;
-                    setPlayerSize(b.size);
-                  }
+                const self = effect.target === "entityA" ? a : b;
+                const other = effect.target === "entityA" ? b : a;
+                const selfDef = CONFIG.entities.find((e) => e.id === self.id)!;
+                const ec: EffectContext = {
+                  self,
+                  other,
+                  effect: effect as Record<string, unknown>,
+                  selfDef,
+                  destroySet: destroyB,
+                  ctx: gameCtx,
+                };
+
+                if ("action" in effect) {
+                  effectRegistry[effect.action as string]?.(ec);
+                } else if ("delta" in effect) {
+                  handleEffectPropertyDelta(ec);
                 }
               }
             }
@@ -311,30 +498,12 @@ export default function Page() {
           }
         }
 
-        // ── Win/lose checks ───────────────────────────────────────────────
+        // ── End condition dispatch ────────────────────────────────────────
+        // To add a new condition type: write a checker above, add to endConditionRegistry.
         for (const cond of CONFIG.endConditions) {
-          if (cond.type === "timer_elapsed" && remaining <= 0) {
+          if (endConditionRegistry[cond.type as string]?.(cond, gameCtx)) {
             gameOverRef.current = true;
             setStatus(cond.result as "won" | "lost");
-          }
-          if (cond.type === "entity_property_threshold") {
-            const p = cond.properties as { entity: string; property: string; operator: string; value: number };
-            const target = states[p.entity]?.[0];
-            if (target) {
-              const val = target[p.property as keyof EntityState] as number;
-              const threshold = p.value;
-              const op = p.operator;
-              const triggered =
-                op === "<=" ? val <= threshold :
-                op === "<"  ? val < threshold :
-                op === ">=" ? val >= threshold :
-                op === ">"  ? val > threshold :
-                val === threshold;
-              if (triggered) {
-                gameOverRef.current = true;
-                setStatus(cond.result as "won" | "lost");
-              }
-            }
           }
         }
 
@@ -355,7 +524,8 @@ export default function Page() {
       }
 
       if (gameOverRef.current) {
-        const outcome = CONFIG.endConditions.find((c) => c.result === status) ??
+        const outcome =
+          CONFIG.endConditions.find((c) => c.result === status) ??
           CONFIG.endConditions.find((c) => c.result !== "playing");
         const msg = outcome?.message ?? (status === "won" ? "You Won!" : "Game Over");
 
@@ -377,23 +547,20 @@ export default function Page() {
     return () => {
       if (animRef.current) cancelAnimationFrame(animRef.current);
     };
-  }, [status]);
+  }, [status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------------------------------------------------------------------------
-  // UI bar computations from config
+  // UI bar computation — data-driven via barSourceRegistry
+  // To add a new bar source type: write a handler above, add to barSourceRegistry.
   // ---------------------------------------------------------------------------
   const bars = CONFIG.ui.statusBars.map((bar) => {
-    if (bar.source === "entity_size") {
-      const pct =
-        ((Math.max(bar.min!, playerSize) - bar.min!) / (bar.max! - bar.min!)) * 100;
-      const display = `${Math.max(0, Math.round(pct))}%`;
-      return { label: bar.label, color: bar.color, pct, display };
-    } else {
-      const pct = (timeLeft / (bar.total!)) * 100;
-      const display = `${Math.ceil(timeLeft)}s`;
-      return { label: bar.label, color: bar.color, pct, display };
-    }
+    const result = barSourceRegistry[bar.source as string]?.(bar, statesRef.current, timeLeft)
+      ?? { pct: 0, display: "?" };
+    return { label: bar.label, color: bar.color, ...result };
   });
+
+  // playerSize is only used to trigger re-renders when entity size changes
+  void playerSize;
 
   return (
     <Box
