@@ -7,6 +7,8 @@ import Button from "@mui/material/Button";
 import LinearProgress from "@mui/material/LinearProgress";
 import Typography from "@mui/material/Typography";
 import Alert from "@mui/material/Alert";
+import MenuItem from "@mui/material/MenuItem";
+import Select from "@mui/material/Select";
 
 // --- Step metadata ---
 
@@ -218,12 +220,30 @@ export default function Home() {
           >
             Paste a news article or describe your concept in plain language
           </Typography>
-          {/* <Typography sx={{ mb: 1.25, fontSize: 13, color: "#aaa" }}>
-            Article example: &quot;On the six month anniversary of the Occupy Wall Street movement, protesters returned to New York&apos;s Zuccotti Park and several were arrested. The occupiers are obstructing Wall Street and are being arrested by police, but Wall Street is also growing the occupy movement.&quot;
-          </Typography>
-          <Typography sx={{ mb: 1.25, fontSize: 13, color: "#aaa" }}>
-            Short concept map also works: &quot;Police arrests Occupier. Occupier obstructs WallStreet. WallStreet grows Occupier.&quot;
-          </Typography> */}
+          <Box sx={{ mb: 1, display: "flex", justifyContent: "flex-end" }}>
+            <Select
+              size="small"
+              displayEmpty
+              value=""
+              onChange={(e) => {
+                if ((e.target.value as string) === "occupy") {
+                  setInputText(`On the six month anniversary of the Occupy Wall Street movement, protesters returned to New York's Zuccotti Park and several were arrested. The occupiers are obstructing Wall Street and are being arrested by police, but Wall Street is also growing the occupy movement.`);
+                }
+              }}
+              sx={{
+                color: "#fff",
+                fontSize: 13,
+                minWidth: 180,
+                ".MuiOutlinedInput-notchedOutline": { borderColor: "#334155" },
+                "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: "#64748b" },
+                ".MuiSvgIcon-root": { color: "#94a3b8" },
+                ".MuiSelect-select": { py: "6px" },
+              }}
+            >
+              <MenuItem value="" disabled sx={{ color: "#94a3b8", fontSize: 13 }}>— load example —</MenuItem>
+              <MenuItem value="occupy" sx={{ fontSize: 13 }}>Occupy Wall Street</MenuItem>
+            </Select>
+          </Box>
           <textarea
             id="concept-input"
             value={inputText}
@@ -244,15 +264,10 @@ export default function Home() {
           />
           <Button
             variant="contained"
+            size="small"
             onClick={handleStart}
             disabled={!inputText.trim() || isLoading}
-            sx={{
-              mt: 1.5,
-              fontWeight: 600,
-              bgcolor: "#2563eb",
-              "&:hover": { bgcolor: "#1d4ed8" },
-              "&:disabled": { bgcolor: "#a0aec0" },
-            }}
+            sx={{ mt: 1.5, "&.Mui-disabled": { opacity: 0.6, backgroundColor: "white" } }}
           >
             {isLoading
               ? `Running Step 1 of ${TOTAL_STEPS}...`
@@ -276,7 +291,6 @@ export default function Home() {
               variant="outlined"
               size="small"
               onClick={handleReset}
-              sx={{ fontSize: 12, color: "#666", borderColor: "#ccc", "&:hover": { borderColor: "#aaa" } }}
             >
               Start over
             </Button>
@@ -422,15 +436,15 @@ export default function Home() {
             >
               <Button
                 variant="contained"
+                size="small"
                 onClick={handleCopyJson}
-                sx={{ fontSize: 13, fontWeight: 600, bgcolor: "#2563eb", "&:hover": { bgcolor: "#1d4ed8" } }}
               >
                 Copy JSON
               </Button>
               <Button
                 variant="contained"
+                size="small"
                 onClick={handleDownloadJson}
-                sx={{ fontSize: 13, fontWeight: 600, bgcolor: "#16a34a", "&:hover": { bgcolor: "#15803d" } }}
               >
                 Download JSON
               </Button>
@@ -444,17 +458,11 @@ export default function Home() {
         <Box sx={{ mb: 2.5 }}>
           <Button
             variant="contained"
+            size="small"
             fullWidth
             onClick={handleNextStep}
             disabled={isLoading}
-            sx={{
-              py: 1.5,
-              fontSize: 15,
-              fontWeight: 700,
-              bgcolor: "#2563eb",
-              "&:hover": { bgcolor: "#1d4ed8" },
-              "&:disabled": { bgcolor: "#a0aec0" },
-            }}
+            sx={{ "&.Mui-disabled": { opacity: 0.6, backgroundColor: "white" } }}
           >
             {isLoading
               ? `Running Step ${currentStep + 1} of ${TOTAL_STEPS}: ${STEP_LABELS[currentStep + 1]?.title ?? ""}...`
