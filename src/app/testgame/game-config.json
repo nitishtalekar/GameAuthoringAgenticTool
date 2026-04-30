@@ -1,0 +1,121 @@
+{
+  "meta": {
+    "title": "Man vs Hunger",
+    "instructions": "Move with WASD or arrow keys. Eat Food. Avoid Hunger. Survive Time.",
+    "canvas": { "width": 900, "height": 600, "background": "#1e293b" }
+  },
+
+  "entities": [
+    {
+      "id": "man",
+      "label": "Man",
+      "color": "#38bdf8",
+      "initialSize": 36,
+      "minSize": 16,
+      "maxSize": 70,
+      "initialPosition": { "anchor": "center" },
+      "speed": 260
+    },
+    {
+      "id": "food",
+      "label": "Food",
+      "color": "#22c55e",
+      "size": 18,
+      "initialPosition": { "anchor": "fixed", "x": 150, "y": 150 },
+      "speed": 0
+    },
+    {
+      "id": "hunger",
+      "label": "Hunger",
+      "color": "#ef4444",
+      "size": 24,
+      "initialPosition": { "anchor": "none" },
+      "speedMin": 110,
+      "speedMax": 155
+    },
+    {
+      "id": "time",
+      "label": "Time",
+      "color": "#7c3aed",
+      "size": 34,
+      "initialPosition": { "anchor": "fixed", "x": 450, "y": 90 },
+      "speed": 0
+    }
+  ],
+
+  "behaviors": [
+    {
+      "entity": "man",
+      "type": "player_controlled",
+      "clampToCanvas": true
+    },
+    {
+      "entity": "hunger",
+      "type": "chase",
+      "clampToCanvas": false,
+      "properties": {
+        "target": "man"
+      }
+    },
+    {
+      "entity": "hunger",
+      "type": "spawn_on_timer",
+      "properties": {
+        "intervalMs": 4000,
+        "spawnAt": {
+          "anchor": "near_entity",
+          "entity": "time",
+          "offsetRadius": 17
+        },
+        "speedMin": 110,
+        "speedMax": 155
+      }
+    }
+  ],
+
+  "interactions": [
+    { "entityA": "man", "entityB": "food",   "type": "consume" },
+    { "entityA": "man", "entityB": "hunger", "type": "damage"  }
+  ],
+
+  "endConditions": [
+    {
+      "id": "survived",
+      "type": "timer_elapsed",
+      "seconds": 60,
+      "result": "won",
+      "message": "You Survived!"
+    },
+    {
+      "id": "too_small",
+      "type": "entity_property_threshold",
+      "entity": "man",
+      "property": "size",
+      "operator": "<=",
+      "value": 16,
+      "result": "lost",
+      "message": "Man Got Too Small!"
+    }
+  ],
+
+  "ui": {
+    "statusBars": [
+      {
+        "label": "Man Size",
+        "source": "entity_size",
+        "entity": "man",
+        "color": "#38bdf8",
+        "displayMode": "percent",
+        "min": 16,
+        "max": 70
+      },
+      {
+        "label": "Time To Win",
+        "source": "timer_remaining",
+        "color": "#a855f7",
+        "displayMode": "seconds",
+        "total": 60
+      }
+    ]
+  }
+}

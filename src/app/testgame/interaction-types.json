@@ -1,0 +1,16 @@
+{
+  "consume": {
+    "hitRadiusMultiplierB": 0.8,
+    "effects": [
+      { "target": "entityA", "property": "size", "delta": 6, "clampToMax": true },
+      { "target": "entityB", "action": "respawn_random", "margin": 40 }
+    ]
+  },
+  "damage": {
+    "hitRadiusMultiplierB": 0.65,
+    "effects": [
+      { "target": "entityA", "property": "size", "delta": -5 },
+      { "target": "entityB", "action": "destroy" }
+    ]
+  }
+}
