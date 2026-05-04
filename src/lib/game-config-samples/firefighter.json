@@ -23,7 +23,7 @@
       "color": "#ef4444",
       "initialSize": 20,
       "minSize": 0,
-      "maxSize": 55,
+      "maxSize": 550,
       "initialPosition": { "anchor": "fixed", "x": 200, "y": 150 },
       "speed": 0
     },
@@ -39,7 +39,7 @@
       "id": "house",
       "label": "H",
       "color": "#a3e635",
-      "size": 28,
+      "size": 38,
       "minSize": 0,
       "initialPosition": { "anchor": "none" },
       "speed": 0
@@ -57,7 +57,7 @@
       "type": "grow_over_time",
       "properties": {
         "property": "size",
-        "rate": 1.5,
+        "rate": 5,
         "clampToMax": true
       }
     },
@@ -65,8 +65,8 @@
       "entity": "water",
       "type": "spawn_on_timer",
       "properties": {
-        "intervalMs": 3000,
-        "max": 4,
+        "intervalMs": 1000,
+        "max": 10,
         "spawnAt": { "anchor": "random_canvas", "margin": 40 },
         "speedMin": 0,
         "speedMax": 0
