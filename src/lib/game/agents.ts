@@ -82,7 +82,7 @@ RULES:
 - Assign one or more behaviors per entity based on its role; every entity except the player-controlled one gets a non-player behavior.
 - For every assigned behavior, populate ALL required properties listed for that behaviorType. Use reasonable thematic values for optional properties.
   - chase → properties.target must be the id of the entity being chased.
-  - spawn_on_timer → properties.spawnAt must be an object with an anchor field ("random_canvas", "random_edge", or "near_entity") plus any extra fields the anchor requires (margin, offset, entity, offsetRadius).
+  - spawn_on_timer → properties.spawnAt must be an object with an anchor field. Supported anchors: "center" (no extras), "top"/"bottom"/"left"/"right" (optional offset), "xy" (required x and y numbers), "random_canvas" (optional margin), "random_edge" (optional offset), "near_entity" (required entity string and offsetRadius number).
   - grow_over_time → properties.property must be "size".
 - Assign one or more interactions per SVO relation; entityA = subject, entityB = object.
 - For every assigned interaction, populate ALL required properties listed for that interactionType.

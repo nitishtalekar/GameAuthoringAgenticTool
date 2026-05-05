@@ -29,6 +29,12 @@
 #### SpawnPosition anchors
 | `anchor` | Extra fields | Description |
 |---|---|---|
+| `"center"` | — | Canvas centre |
+| `"top"` | `offset?: number` | Top edge, horizontally centred, inset by offset |
+| `"bottom"` | `offset?: number` | Bottom edge, horizontally centred, inset by offset |
+| `"left"` | `offset?: number` | Left edge, vertically centred, inset by offset |
+| `"right"` | `offset?: number` | Right edge, vertically centred, inset by offset |
+| `"xy"` | `x: number`, `y: number` | Exact pixel position |
 | `"random_canvas"` | `margin?: number` | Random point inside the canvas, inset by margin |
 | `"random_edge"` | `offset?: number` | Random point just outside one of the four edges |
 | `"near_entity"` | `entity: string`, `offsetRadius: number` | Random point on a circle around the first instance of the named entity |

@@ -63,7 +63,7 @@ export const BEHAVIOR_RHETORICS: BehaviorRhetoric[] = [
         key: "properties.spawnAt",
         type: "SpawnPosition",
         required: true,
-        description: 'Where to place each new instance. anchor: "random_canvas" (margin?), "random_edge" (offset?), or "near_entity" (entity, offsetRadius)',
+        description: 'Where to place each new instance. anchor: "center" | "top" (offset?) | "bottom" (offset?) | "left" (offset?) | "right" (offset?) | "xy" (x, y) | "random_canvas" (margin?) | "random_edge" (offset?) | "near_entity" (entity, offsetRadius)',
       },
     ],
   },

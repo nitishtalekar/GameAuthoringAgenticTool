@@ -119,6 +119,32 @@ export function resolveSpawnPosition(p: CONFIG, ctx: GameContext): { x: number; 
   const h = ctx.canvas.height;
   const anchor = p.spawnAt?.anchor;
 
+  if (anchor === "center") return { x: w / 2, y: h / 2 };
+
+  if (anchor === "top") {
+    const offset = p.spawnAt?.offset ?? 0;
+    return { x: w / 2, y: offset };
+  }
+
+  if (anchor === "bottom") {
+    const offset = p.spawnAt?.offset ?? 0;
+    return { x: w / 2, y: h - offset };
+  }
+
+  if (anchor === "left") {
+    const offset = p.spawnAt?.offset ?? 0;
+    return { x: offset, y: h / 2 };
+  }
+
+  if (anchor === "right") {
+    const offset = p.spawnAt?.offset ?? 0;
+    return { x: w - offset, y: h / 2 };
+  }
+
+  if (anchor === "xy") {
+    return { x: p.spawnAt.x ?? w / 2, y: p.spawnAt.y ?? h / 2 };
+  }
+
   if (anchor === "near_entity") {
     const ref = ctx.states[p.spawnAt.entity]?.[0];
     const angle = Math.random() * Math.PI * 2;
