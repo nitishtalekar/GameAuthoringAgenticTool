@@ -248,6 +248,7 @@ SCHEMA:
     // chase: { entity, type, clampToCanvas: false, properties: { target: "playerEntityId" } }
     // spawn_on_timer (enemy): { entity, type, properties: { intervalMs, max, spawnAt: { anchor: "random_edge", offset: 30 }, speedMin, speedMax } }
     // spawn_on_timer (collectible): { entity, type, properties: { intervalMs, max, spawnAt: { anchor: "random_canvas", margin: 30 }, speedMin: 0, speedMax: 0 } }
+    // spawn_on_start (static/fixed-count): { entity, type, properties: { count: N, spawnAt: { anchor: "random_canvas", margin: 30 } } }
     // grow_over_time: { entity, type, properties: { property: "size", rate: N, clampToMax: true } }
     // emit one behavior object per behavior per entity
   ],

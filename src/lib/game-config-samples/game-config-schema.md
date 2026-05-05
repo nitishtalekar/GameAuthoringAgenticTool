@@ -41,6 +41,16 @@
 
 ---
 
+### `spawn_on_start`
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `properties.count` | number | yes | Number of instances to spawn at game start |
+| `properties.spawnAt` | SpawnPosition | yes | Where to place each instance (see SpawnPosition anchors above) |
+
+Instances are placed once at game start and are never respawned. Destroyed instances stay gone.
+
+---
+
 ### `grow_over_time`
 | Property | Type | Required | Description |
 |---|---|---|---|

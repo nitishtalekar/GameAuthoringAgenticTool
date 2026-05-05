@@ -36,6 +36,16 @@ export const BEHAVIOR_PROPERTY_SPECS: Record<string, BehaviorJsonSpec> = {
       "properties.target: <id of the entity being chased — usually the player>",
     ],
   },
+  spawn_on_start: {
+    entityFields: [
+      "size: 20–60",
+      "initialPosition: { anchor: 'none' }",
+    ],
+    behaviorFields: [
+      "properties.count: 1–10 (number of instances to place at game start)",
+      "properties.spawnAt: { anchor: 'random_canvas', margin: 20–60 }",
+    ],
+  },
   spawn_on_timer: {
     entityFields: [
       "size: 20–60",

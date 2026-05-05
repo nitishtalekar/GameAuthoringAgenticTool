@@ -58,7 +58,7 @@ export function buildInitialStates(config: CONFIG): Record<string, EntityState[]
   const canvas = config.meta.canvas;
   const spawnedEntities = new Set(
     config.behaviors
-      .filter((b: CONFIG) => b.type === "spawn_on_timer")
+      .filter((b: CONFIG) => b.type === "spawn_on_timer" || b.type === "spawn_on_start")
       .map((b: CONFIG) => b.entity)
   );
   const states: Record<string, EntityState[]> = {};
@@ -195,6 +195,30 @@ export function handleSpawnOnTimer(behavior: CONFIG, behaviorIndex: number, ctx:
     inventory: {},
   });
   ctx.lastSpawnMap.current[behaviorIndex] = ctx.now;
+}
+
+export function handleSpawnOnStart(behavior: CONFIG, behaviorIndex: number, ctx: GameContext, config: CONFIG): void {
+  // Only run once — guard with lastSpawnMap entry
+  if (ctx.lastSpawnMap.current[behaviorIndex] !== undefined) return;
+  ctx.lastSpawnMap.current[behaviorIndex] = ctx.now;
+
+  const p = behavior.properties;
+  const entityDef = config.entities.find((e: CONFIG) => e.id === behavior.entity);
+  if (!entityDef) return;
+
+  const count = p.count ?? 1;
+  for (let i = 0; i < count; i++) {
+    const { x, y } = resolveSpawnPosition(p, ctx);
+    ctx.states[behavior.entity].push({
+      id: behavior.entity,
+      instanceId: ctx.instanceCounter.current++,
+      x,
+      y,
+      size: entityDef.size ?? 20,
+      speed: 0,
+      inventory: {},
+    });
+  }
 }
 
 export function handleGrowOverTime(behavior: CONFIG, ctx: GameContext, config: CONFIG): void {

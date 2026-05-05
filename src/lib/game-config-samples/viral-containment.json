@@ -1,0 +1,166 @@
+{
+  "meta": {
+    "title": "Viral Containment",
+    "instructions": "WASD to move. Collect Vaccine packs (green). Walk into the Virus with vaccines to shrink it. Don't let the Virus destroy all Hospitals!",
+    "canvas": { "width": 900, "height": 600, "background": "#0f172a" }
+  },
+
+  "entities": [
+    {
+      "id": "healthworker",
+      "label": "HW",
+      "color": "#38bdf8",
+      "initialSize": 24,
+      "minSize": 10,
+      "maxSize": 24,
+      "speed": 200,
+      "initialPosition": { "anchor": "center" },
+      "maxInventory": { "vaccine": 5 }
+    },
+    {
+      "id": "virus",
+      "label": "V",
+      "color": "#ef4444",
+      "initialSize": 30,
+      "minSize": 0,
+      "maxSize": 400,
+      "initialPosition": { "anchor": "fixed", "x": 450, "y": 300 },
+      "speed": 0
+    },
+    {
+      "id": "vaccine",
+      "label": "Vx",
+      "color": "#22c55e",
+      "size": 16,
+      "initialPosition": { "anchor": "none" },
+      "speed": 0
+    },
+    {
+      "id": "hospital",
+      "label": "H+",
+      "color": "#f0abfc",
+      "size": 40,
+      "minSize": 0,
+      "initialPosition": { "anchor": "none" },
+      "speed": 0
+    }
+  ],
+
+  "behaviors": [
+    {
+      "entity": "healthworker",
+      "type": "player_controlled",
+      "clampToCanvas": true
+    },
+    {
+      "entity": "virus",
+      "type": "grow_over_time",
+      "properties": {
+        "property": "size",
+        "rate": 8,
+        "clampToMax": true
+      }
+    },
+    {
+      "entity": "vaccine",
+      "type": "spawn_on_timer",
+      "properties": {
+        "intervalMs": 1500,
+        "max": 8,
+        "spawnAt": { "anchor": "random_canvas", "margin": 50 },
+        "speedMin": 0,
+        "speedMax": 0
+      }
+    },
+    {
+      "entity": "hospital",
+      "type": "spawn_on_start",
+      "properties": {
+        "count": 4,
+        "spawnAt": { "anchor": "random_canvas", "margin": 70 }
+      }
+    }
+  ],
+
+  "interactions": [
+    { "entityA": "healthworker", "entityB": "vaccine", "type": "collect" },
+    {
+      "entityA": "healthworker",
+      "entityB": "virus",
+      "type": "damage_on_item",
+      "options": { "item": "vaccine", "amount": 1 }
+    },
+    { "entityA": "virus", "entityB": "hospital", "type": "destroy" }
+  ],
+
+  "endConditions": [
+    {
+      "id": "survived",
+      "type": "timer_elapsed",
+      "properties": { "seconds": 120 },
+      "result": "won",
+      "message": "Outbreak contained! The city survived!"
+    },
+    {
+      "id": "virus_contained",
+      "type": "entity_property_threshold",
+      "properties": {
+        "entity": "virus",
+        "property": "size",
+        "operator": "<=",
+        "value": 0
+      },
+      "result": "won",
+      "message": "Virus eradicated! Perfect containment!"
+    },
+    {
+      "id": "hospitals_gone",
+      "type": "entity_count_threshold",
+      "properties": {
+        "entity": "hospital",
+        "operator": "<=",
+        "value": 0
+      },
+      "result": "lost",
+      "message": "All hospitals overwhelmed — the virus wins."
+    }
+  ],
+
+  "ui": {
+    "statusBars": [
+      {
+        "label": "Virus Spread",
+        "source": "entity_size",
+        "entity": "virus",
+        "color": "#ef4444",
+        "displayMode": "percent",
+        "min": 0,
+        "max": 400
+      },
+      {
+        "label": "Vaccines Held",
+        "source": "entity_inventory_item",
+        "entity": "healthworker",
+        "item": "vaccine",
+        "color": "#22c55e",
+        "min": 0,
+        "max": 5
+      },
+      {
+        "label": "Hospitals Remaining",
+        "source": "entity_count",
+        "entity": "hospital",
+        "color": "#f0abfc",
+        "min": 0,
+        "max": 4
+      },
+      {
+        "label": "Time Left",
+        "source": "timer_remaining",
+        "color": "#a855f7",
+        "displayMode": "seconds",
+        "total": 120
+      }
+    ]
+  }
+}

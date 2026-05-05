@@ -74,13 +74,10 @@
     },
     {
       "entity": "house",
-      "type": "spawn_on_timer",
+      "type": "spawn_on_start",
       "properties": {
-        "intervalMs": 1,
-        "max": 4,
-        "spawnAt": { "anchor": "random_canvas", "margin": 60 },
-        "speedMin": 0,
-        "speedMax": 0
+        "count": 4,
+        "spawnAt": { "anchor": "random_canvas", "margin": 60 }
       }
     }
   ],

@@ -32,6 +32,13 @@ export const BEHAVIOR_RHETORICS: BehaviorRhetoric[] = [
     applicableVerbs: ["chases", "hunts", "pursues", "follows", "tracks", "stalks"],
   },
   {
+    name: "Spawn On Start",
+    behaviorType: "spawn_on_start",
+    description: "Spawns a fixed number of entity instances once at game start. Destroyed instances are not respawned.",
+    tags: ["place", "initial", "fixed", "static", "preset"],
+    applicableVerbs: ["placed", "positioned", "located", "stationed", "set"],
+  },
+  {
     name: "Spawn On Timer",
     behaviorType: "spawn_on_timer",
     description: "Periodically spawns new instances of an entity at a configurable rate and position.",

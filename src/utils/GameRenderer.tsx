@@ -12,6 +12,7 @@ import {
   handleChase,
   handleGrowOverTime,
   handlePlayerControlled,
+  handleSpawnOnStart,
   handleSpawnOnTimer,
   processInteractions,
 } from "./game-engine";
@@ -100,6 +101,7 @@ export function GameRenderer({ config, onExit }: { config: CONFIG; onExit: () =>
           if (behavior.type === "player_controlled") handlePlayerControlled(behavior, gameCtx);
           else if (behavior.type === "chase") handleChase(behavior, gameCtx);
           else if (behavior.type === "spawn_on_timer") handleSpawnOnTimer(behavior, i, gameCtx, config);
+          else if (behavior.type === "spawn_on_start") handleSpawnOnStart(behavior, i, gameCtx, config);
           else if (behavior.type === "grow_over_time") handleGrowOverTime(behavior, gameCtx, config);
         });
 
@@ -199,6 +201,10 @@ export function GameRenderer({ config, onExit }: { config: CONFIG; onExit: () =>
     } else if (bar.source === "entity_inventory_item") {
       const inv = inventoryState[bar.entity ?? ""] ?? statesRef.current[bar.entity ?? ""]?.[0]?.inventory ?? {};
       const count = inv[bar.item ?? ""] ?? 0;
+      pct = bar.max > 0 ? (count / bar.max) * 100 : 0;
+      display = `${count}`;
+    } else if (bar.source === "entity_count") {
+      const count = statesRef.current[bar.entity ?? ""]?.length ?? 0;
       pct = bar.max > 0 ? (count / bar.max) * 100 : 0;
       display = `${count}`;
     }
