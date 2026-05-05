@@ -6,11 +6,7 @@ import {
   formatInteractionRhetoricsForPrompt,
 } from "@/data/micro-rhetorics";
 import { formatWinRecipesForPrompt, formatLoseRecipesForPrompt } from "@/data/recipes";
-import { formatEndConditionPropertySpecsForPrompt } from "@/data/end-condition-property-specs";
-import {
-  formatBehaviorPropertySpecsForPrompt,
-  formatInteractionPropertySpecsForPrompt,
-} from "@/data/behavior-property-specs";
+import { GAME_SCHEMA } from "@/data/game-schema";
 
 /**
  * Step 1 — Concept Extraction Agent
@@ -75,22 +71,43 @@ export function buildRhetoricAssignmentAgent(): NodeFunction {
   const behaviorList = formatBehaviorRhetoricsForPrompt();
   const interactionList = formatInteractionRhetoricsForPrompt();
 
-  const systemPrompt = `Assign behavior and interaction rhetorics to a concept map (entities + SVO relations).
-Your only job is to choose the most semantically fitting rhetoric type for each entity and relation.
+  const systemPrompt = `You are a game-design agent. Assign behavior and interaction rhetorics to a concept map for a playable 2-D game.
+You must think like a game designer, not just a semantic matcher — your selections determine whether the game is fun, balanced, and winnable.
 Do NOT assign numeric values, speeds, sizes, or configuration properties — those are handled later.
 
-BEHAVIOR RHETORICS:
+BEHAVIOR RHETORICS (single-entity movement / lifecycle patterns):
 ${behaviorList}
 
-INTERACTION RHETORICS:
+INTERACTION RHETORICS (collision effects between two entities):
 ${interactionList}
 
-RULES:
-- CRITICAL: Exactly one behavior across ALL entityBehaviors must have isPlayer=true. Pick the entity the player most naturally controls (the one taking action or being controlled in the concept).
-- Assign exactly one behaviorType per entity based on its conceptual role.
+=== SEMANTIC RULES ===
+- Assign exactly one behaviorType per entity based on its conceptual role in the narrative.
 - Assign exactly one interactionType per SVO relation; entityA = subject, entityB = object.
 - Match verb semantics to the closest rhetoric using the tags and descriptions above.
 - Output only the type identifiers — no properties, no numeric values.
+
+=== GAME-DESIGN RULES (must ALL be satisfied) ===
+1. PLAYER ENTITY: Exactly one entityBehavior must have isPlayer=true. Choose the entity the player most naturally controls — the one that takes action or is the protagonist in the concept.
+   - The player entity MUST use behaviorType "player_controlled".
+   - The player entity's clampToCanvas MUST be true.
+
+2. PLAYER AGENCY: At least one interaction must have the player entity as entityA (the actor), giving the player something meaningful to do.
+
+3. THREAT / CHALLENGE: At least one entity must pose a threat to the player (e.g., it chases the player or damages the player on contact), otherwise the game has no tension.
+
+4. COLLECT → DAMAGE_ON_ITEM LOOP: If any interaction uses "collect", there MUST also be a "damage_on_item" interaction that spends that collected resource. A collect with no outlet creates an endless loop with no win path. Conversely, "damage_on_item" requires "collect" to obtain the resource first.
+
+5. SPAWNER PAIRING: Entities with behavior "spawn_on_timer" or "spawn_on_start" must appear as entityA or entityB in at least one interaction, otherwise they are inert decorations.
+
+6. GROW_OVER_TIME EXCLUSIVITY: An entity with "grow_over_time" behavior must NOT also be assigned "spawn_on_timer" or "spawn_on_start" — pick one lifecycle pattern only.
+
+7. SINGLE-INSTANCE BEHAVIORS: "player_controlled" and "grow_over_time" create exactly one instance. Do not use "entity_count_threshold" conditions on these later (the recipe agent will see this output). Flag them with a rationale note if relevant.
+
+8. CHASE TARGET: If any entity uses "chase", it must logically chase another entity (typically the player). Note the intended target in the rationale.
+
+=== RATIONALE ===
+After making your selections, produce one short sentence per entity/interaction explaining the game-design reason for your choice (not just the semantic match — explain how it creates fun, tension, or progression).
 
 OUTPUT: valid JSON only — no prose, no markdown fences:
 {
@@ -108,6 +125,10 @@ OUTPUT: valid JSON only — no prose, no markdown fences:
       "entityB": "string",
       "interactionType": "string"
     }
+  ],
+  "rhetoricsRationale": [
+    "EntityName → behaviorType: <one sentence game-design reason>",
+    "EntityA + EntityB → interactionType: <one sentence game-design reason>"
   ]
 }`;
 
@@ -166,80 +187,23 @@ OUTPUT: valid JSON only — no prose, no markdown fences:
 }
 
 /**
- * Step 4 — Alignment Rating Agent
+ * Step 4 — Game JSON Generation Agent
  *
- * Evaluates how well the selected rhetorics and recipes express the original concept.
- * Produces a numeric alignment score (0.0–1.0) and critique.
- * Does NOT repair or alter any state.
- */
-export function buildAlignmentRatingAgent(): NodeFunction {
-  const llm = createOpenAIModel({ temperature: 0.7 });
-
-  const systemPrompt = `Score how well the assigned rhetorics and recipes express the original concept's SVO relations.
-
-alignmentScore: float 0.0–1.0 (avoid round numbers). 0 = contradicts meaning, 1 = perfect expression.
-mismatches: specific divergences between mechanics and concept. Critique only — no fixes.
-interpretation: 1–2 paragraphs on what the game rhetorically expresses vs. the original concept.
-
-OUTPUT: valid JSON only — no prose, no markdown fences:
-{
-  "alignmentScore": 0.0,
-  "interpretation": "string",
-  "mismatches": ["string"]
-}`;
-
-  return buildAgentNode(llm, { systemPrompt });
-}
-
-/**
- * Step 5 — Game JSON Generation Agent
- *
- * Assembles the final game config JSON from all prior pipeline state.
- * Responsible for assigning ALL numeric values (speeds, sizes, timers, thresholds, etc.)
- * using the property reference below. Output matches the game-config-samples/ schema exactly.
+ * Assembles the final playable game config JSON from all prior pipeline state.
+ * Uses GAME_SCHEMA as its single authoritative reference for valid types,
+ * required fields, numeric ranges, and playability constraints.
  */
 export function buildGameJsonAgent(): NodeFunction {
   const llm = createOpenAIModel({ temperature: 0.1 });
-  const behaviorPropertySpecs = formatBehaviorPropertySpecsForPrompt();
-  const interactionPropertySpecs = formatInteractionPropertySpecsForPrompt();
-  const endConditionPropertySpecs = formatEndConditionPropertySpecsForPrompt();
 
-  const systemPrompt = `Convert the final game specification into a complete game-config JSON. Output valid JSON only — no prose, no markdown fences.
+  const systemPrompt = `Convert the game specification into a complete, playable game-config JSON.
+Output valid JSON only — no prose, no markdown fences, no code blocks.
 
-You receive the concept, rhetoric assignment (behavior/interaction types only), and recipe selection (condition types only).
-YOUR JOB: populate all numeric values, entity sizes, speeds, spawn parameters, condition thresholds, and inventory fields
-using the PROPERTY REFERENCE below. Pick values within the stated ranges to make the game feel balanced and playable.
+You will receive the concept, rhetoric assignment (behavior/interaction types), and recipe selection (end condition types).
+YOUR JOB: populate every field — entity sizes, speeds, spawn parameters, condition thresholds, inventory keys, status bars —
+strictly following the GAME SCHEMA below. Every constraint in that schema is a hard rule; violating any of them produces a broken game.
 
-PROPERTY REFERENCE — BEHAVIORS:
-${behaviorPropertySpecs}
-
-PROPERTY REFERENCE — INTERACTIONS:
-${interactionPropertySpecs}
-
-PROPERTY REFERENCE — END CONDITIONS:
-${endConditionPropertySpecs}
-
-SCHEMA:
-{
-  "meta": {
-    "title": "string",
-    "instructions": "string",
-    "canvas": { "width": 900, "height": 600, "background": "#hex" }
-  },
-  "entities": [
-    {
-      "id": "lowercased_entity_name",
-      "label": "1–4 char symbol",
-      "color": "#hex"
-    }
-  ],
-  "behaviors": [],
-  "interactions": [],
-  "endConditions": [],
-  "ui": {
-    "statusBars": []
-  }
-}`;
+${GAME_SCHEMA}`;
 
   return buildAgentNode(llm, { systemPrompt });
 }

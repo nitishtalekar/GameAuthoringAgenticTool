@@ -5,7 +5,6 @@ import {
   buildConceptExtractionAgent,
   buildRhetoricAssignmentAgent,
   buildRecipeSelectionAgent,
-  buildAlignmentRatingAgent,
   buildGameJsonAgent,
 } from "@/lib/game/agents";
 import type {
@@ -15,7 +14,6 @@ import type {
   ConceptData,
   RhetoricAssignment,
   RecipeOutput,
-  AlignmentRating,
 } from "@/lib/game/types";
 
 // Required: LangChain uses Node.js built-ins incompatible with the Edge runtime.
@@ -44,11 +42,6 @@ const PIPELINE: StepDefinition[] = [
     name: "Recipe Selection",
     requires: ["conceptData", "rhetoricAssignment"],
     run: runRecipeSelection,
-  },
-  {
-    name: "Alignment Rating",
-    requires: ["conceptData", "rhetoricAssignment", "recipeOutput"],
-    run: runAlignmentRating,
   },
   {
     name: "Game JSON Generation",
@@ -180,38 +173,6 @@ Select at least one win condition and at least one lose condition for this game.
   return { ...state, recipeOutput };
 }
 
-async function runAlignmentRating(state: GameState): Promise<GameState> {
-  const agentNode = buildAlignmentRatingAgent();
-  const graph = buildGraph({
-    nodes: [{ name: "alignmentRating", fn: agentNode }],
-    edges: [{ from: "alignmentRating", to: "END" }],
-    entryPoint: "alignmentRating",
-  });
-
-  const humanMsg = `Original user concept (intended meaning):
-"${state.initialInput}"
-
-Concept data (SVO relations defining the intended meaning):
-${JSON.stringify(state.conceptData, null, 2)}
-
-Rhetoric assignment (entity behaviors and interactions selected):
-${JSON.stringify(state.rhetoricAssignment, null, 2)}
-
-Recipe output (win/lose conditions selected):
-${JSON.stringify(state.recipeOutput, null, 2)}
-
-Rate how well the selected rhetorics and recipes express the intended rhetorical meaning of the concept.`;
-
-  const finalState = await runGraph(graph, {
-    messages: [human(humanMsg)],
-  });
-
-  const raw = getLastMessageContent(finalState.messages);
-  const alignmentRating = parseJson<AlignmentRating>(raw, "Step 4 (Alignment Rating)");
-
-  return { ...state, alignmentRating };
-}
-
 async function runGameJsonGeneration(state: GameState): Promise<GameState> {
   const agentNode = buildGameJsonAgent();
   const graph = buildGraph({
@@ -220,6 +181,11 @@ async function runGameJsonGeneration(state: GameState): Promise<GameState> {
     entryPoint: "gameJsonGen",
   });
 
+  const rationale = state.rhetoricAssignment?.rhetoricsRationale;
+  const rationaleSection = rationale?.length
+    ? `\nRhetoric design rationale (why each behavior/interaction was chosen — use this to inform numeric choices like spawn rates, sizes, speeds):\n${rationale.map((r) => `- ${r}`).join("\n")}`
+    : "";
+
   const humanMsg = `Original user concept:
 "${state.initialInput}"
 
@@ -227,13 +193,17 @@ Concept data:
 ${JSON.stringify(state.conceptData, null, 2)}
 
 Rhetoric assignment (entity behaviors and interactions):
-${JSON.stringify(state.rhetoricAssignment, null, 2)}
-
+${JSON.stringify(
+    {
+      entityBehaviors: state.rhetoricAssignment?.entityBehaviors,
+      entityInteractions: state.rhetoricAssignment?.entityInteractions,
+    },
+    null,
+    2
+  )}
+${rationaleSection}
 Recipe output (win/lose conditions):
 ${JSON.stringify(state.recipeOutput, null, 2)}
-
-Alignment rating (for metadata context only — do not alter the above):
-${JSON.stringify(state.alignmentRating, null, 2)}
 
 Generate the complete game config JSON now.`;
 

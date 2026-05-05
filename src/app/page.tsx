@@ -26,16 +26,12 @@ const STEP_LABELS: Record<number, { title: string; description: string }> = {
     description: "Choosing win and lose end conditions",
   },
   4: {
-    title: "Alignment Rating",
-    description: "Rating how well the mechanics express the original concept",
-  },
-  5: {
     title: "Game JSON Generation",
     description: "Generating the final game engine configuration",
   },
 };
 
-const TOTAL_STEPS = 5;
+const TOTAL_STEPS = 4;
 
 // --- StepCard: collapsible result display ---
 
@@ -363,16 +359,7 @@ export default function Home() {
             isLatest={currentStep === 3 && !isLoading}
           />
         )}
-        {gameState.alignmentRating && (
-          <StepCard
-            stepNumber={4}
-            title="Alignment Rating"
-            data={gameState.alignmentRating}
-            isLatest={currentStep === 4 && !isLoading}
-          />
-        )}
-
-        {/* Game JSON output (step 5) */}
+        {/* Game JSON output (step 4) */}
         {gameState.gameJsonOutput && (
           <details
             open
@@ -413,7 +400,7 @@ export default function Home() {
                   flexShrink: 0,
                 }}
               >
-                5
+                4
               </Box>
               Game Configuration JSON — Final Output
             </summary>

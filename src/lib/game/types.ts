@@ -30,6 +30,8 @@ export interface EntityInteractionSpec {
 export interface RhetoricAssignment {
   entityBehaviors: EntityBehaviorSpec[];
   entityInteractions: EntityInteractionSpec[];
+  /** One sentence per entity/interaction explaining the game-design rationale behind each choice */
+  rhetoricsRationale?: string[];
 }
 
 // ---- Recipe Output (Step 3 output) ----
@@ -54,14 +56,6 @@ export interface RecipeOutput {
   justification?: string;
 }
 
-// ---- Alignment Rating (Step 4 output) ----
-
-export interface AlignmentRating {
-  alignmentScore: number;
-  interpretation: string;
-  mismatches: string[];
-}
-
 // ---- Top-level GameState (client-side accumulator) ----
 
 export interface GameState {
@@ -71,7 +65,6 @@ export interface GameState {
   conceptData?: ConceptData;
   rhetoricAssignment?: RhetoricAssignment;
   recipeOutput?: RecipeOutput;
-  alignmentRating?: AlignmentRating;
   /** Final game config JSON string */
   gameJsonOutput?: string;
 }
