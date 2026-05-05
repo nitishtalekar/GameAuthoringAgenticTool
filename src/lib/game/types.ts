@@ -18,34 +18,13 @@ export interface EntityBehaviorSpec {
   entity: string;
   isPlayer: boolean;
   behaviorType: string;
-  // player_controlled
-  speed?: number;
   clampToCanvas?: boolean;
-  // sized entities
-  initialSize?: number;
-  minSize?: number;
-  maxSize?: number;
-  size?: number;
-  // chase
-  target?: string;
-  speedMin?: number;
-  speedMax?: number;
-  // spawn_on_timer
-  spawnIntervalMs?: number;
-  spawnMax?: number;
-  // grow_over_time
-  growRate?: number;
-  // inventory
-  maxInventory?: Record<string, number>;
 }
 
 export interface EntityInteractionSpec {
   entityA: string;
   entityB: string;
   interactionType: string;
-  // damage_on_item options
-  item?: string;
-  amount?: number;
 }
 
 export interface RhetoricAssignment {
@@ -56,31 +35,23 @@ export interface RhetoricAssignment {
 // ---- Recipe Output (Step 3 output) ----
 
 export interface WinCondition {
+  id: string;
   recipe: string;
   type: "entity_property_threshold" | "entity_count_threshold" | "timer_elapsed";
-  entity?: string;
-  property?: string;
-  operator?: ">=" | "<=" | ">" | "<" | "==";
-  value?: number;
-  seconds?: number;
   message: string;
 }
 
 export interface LoseCondition {
+  id: string;
   recipe: string;
   type: "entity_property_threshold" | "entity_count_threshold" | "timer_elapsed";
-  entity?: string;
-  property?: string;
-  operator?: ">=" | "<=" | ">" | "<" | "==";
-  value?: number;
-  seconds?: number;
   message: string;
 }
 
 export interface RecipeOutput {
   winConditions: WinCondition[];
   loseConditions: LoseCondition[];
-  justification: string;
+  justification?: string;
 }
 
 // ---- Alignment Rating (Step 4 output) ----

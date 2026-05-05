@@ -6,6 +6,10 @@ import {
   formatInteractionRhetoricsForPrompt,
 } from "@/data/micro-rhetorics";
 import { formatWinRecipesForPrompt, formatLoseRecipesForPrompt } from "@/data/recipes";
+import {
+  formatBehaviorPropertySpecsForPrompt,
+  formatInteractionPropertySpecsForPrompt,
+} from "@/data/behavior-property-specs";
 
 /**
  * Step 1 — Concept Extraction Agent
@@ -61,8 +65,9 @@ EXAMPLE OUTPUT:
  * Takes the structured concept data (entities + SVO relations) and assigns:
  * - One behavior rhetoric per entity (from BEHAVIOR_RHETORICS)
  * - One interaction rhetoric per SVO relation (from INTERACTION_RHETORICS)
- * - Numeric parameters for each entity (speed, size, spawnRate, etc.)
  * - Automatically selects which entity is the player based on concept semantics
+ *
+ * Does NOT assign numeric parameters — that is Step 5's responsibility.
  */
 export function buildRhetoricAssignmentAgent(): NodeFunction {
   const llm = createOpenAIModel({ temperature: 0.3 });
@@ -70,41 +75,37 @@ export function buildRhetoricAssignmentAgent(): NodeFunction {
   const interactionList = formatInteractionRhetoricsForPrompt();
 
   const systemPrompt = `Assign behavior and interaction rhetorics to a concept map (entities + SVO relations).
+Your only job is to choose the most semantically fitting rhetoric type for each entity and relation.
+Do NOT assign numeric values, speeds, sizes, or configuration properties — those are handled later.
 
-BEHAVIOR RHETORICS (each lists its required and optional properties):
+BEHAVIOR RHETORICS:
 ${behaviorList}
 
-INTERACTION RHETORICS (each lists its required and optional properties):
+INTERACTION RHETORICS:
 ${interactionList}
 
 RULES:
-- CRITICAL: Exactly one behavior across ALL entityBehaviors must have behaviorType="player_controlled". No more, no less. Pick the entity the player most naturally controls (the one taking action or being controlled in the concept).
-- Assign one or more behaviors per entity based on its role; every entity except the player-controlled one gets a non-player behavior.
-- For every assigned behavior, populate ALL required properties listed for that behaviorType. Use reasonable thematic values for optional properties.
-  - chase → properties.target must be the id of the entity being chased.
-  - spawn_on_timer → properties.spawnAt must be an object with an anchor field. Supported anchors: "center" (no extras), "top"/"bottom"/"left"/"right" (optional offset), "xy" (required x and y numbers), "random_canvas" (optional margin), "random_edge" (optional offset), "near_entity" (required entity string and offsetRadius number).
-  - grow_over_time → properties.property must be "size".
-- Assign one or more interactions per SVO relation; entityA = subject, entityB = object.
-- For every assigned interaction, populate ALL required properties listed for that interactionType.
-  - damage_on_item → options.item (inventory item id) and options.amount (number) are required.
-- Match verb semantics to the closest rhetoric using the tags and descriptions.
+- CRITICAL: Exactly one behavior across ALL entityBehaviors must have isPlayer=true. Pick the entity the player most naturally controls (the one taking action or being controlled in the concept).
+- Assign exactly one behaviorType per entity based on its conceptual role.
+- Assign exactly one interactionType per SVO relation; entityA = subject, entityB = object.
+- Match verb semantics to the closest rhetoric using the tags and descriptions above.
+- Output only the type identifiers — no properties, no numeric values.
 
 OUTPUT: valid JSON only — no prose, no markdown fences:
 {
   "entityBehaviors": [
     {
       "entity": "string",
+      "isPlayer": true,
       "behaviorType": "string",
-      "clampToCanvas": true,
-      "properties": {}
+      "clampToCanvas": true
     }
   ],
   "entityInteractions": [
     {
       "entityA": "string",
       "entityB": "string",
-      "interactionType": "string",
-      "options": {}
+      "interactionType": "string"
     }
   ]
 }`;
@@ -115,8 +116,8 @@ OUTPUT: valid JSON only — no prose, no markdown fences:
 /**
  * Step 3 — Recipe Selection Agent
  *
- * Selects at least one win recipe and at least one lose recipe.
- * Can select multiple conditions; ANY ONE triggers the outcome.
+ * Selects at least one win recipe and at least one lose recipe based on concept semantics.
+ * Does NOT populate condition field values — that is Step 5's responsibility.
  */
 export function buildRecipeSelectionAgent(): NodeFunction {
   const llm = createOpenAIModel({ temperature: 0.3 });
@@ -124,8 +125,8 @@ export function buildRecipeSelectionAgent(): NodeFunction {
   const loseRecipes = formatLoseRecipesForPrompt();
 
   const systemPrompt = `Select win and lose end conditions for a game given its concept, behaviors, and interactions.
-
-Each recipe below lists its condition type and ALL required fields you must populate.
+Your only job is to pick the most thematically fitting recipe name and condition type.
+Do NOT assign entity ids, property names, operators, or numeric values — those are handled later.
 
 WIN RECIPES:
 ${winRecipes}
@@ -135,9 +136,8 @@ ${loseRecipes}
 
 RULES:
 - Select at least one win and at least one lose condition; any single condition firing ends the game.
-- Win and lose conditions must not fire on the same game state.
-- For every selected recipe, populate ALL required condition fields listed under "Condition fields". Use entity ids from the concept map.
-- operator values: use ">=" or ">" for "must reach or exceed", "<=" or "<" for "must fall to or below".
+- Win and lose conditions must not logically fire on the same game state.
+- If a recipe lists a required interaction type, only select it when that interaction type is present in the rhetoric assignment.
 - id must be a unique snake_case string.
 
 OUTPUT: valid JSON only — no prose, no markdown fences:
@@ -147,7 +147,6 @@ OUTPUT: valid JSON only — no prose, no markdown fences:
       "id": "string",
       "recipe": "string",
       "type": "entity_property_threshold | entity_count_threshold | timer_elapsed",
-      "properties": { "entity": "string", "property": "size", "operator": "string", "value": 0 },
       "message": "string"
     }
   ],
@@ -156,7 +155,6 @@ OUTPUT: valid JSON only — no prose, no markdown fences:
       "id": "string",
       "recipe": "string",
       "type": "entity_property_threshold | entity_count_threshold | timer_elapsed",
-      "properties": { "entity": "string", "property": "size", "operator": "string", "value": 0 },
       "message": "string"
     }
   ],
@@ -196,12 +194,36 @@ OUTPUT: valid JSON only — no prose, no markdown fences:
  * Step 5 — Game JSON Generation Agent
  *
  * Assembles the final game config JSON from all prior pipeline state.
- * Output matches the game-config-samples/ schema exactly.
+ * Responsible for assigning ALL numeric values (speeds, sizes, timers, thresholds, etc.)
+ * using the property reference below. Output matches the game-config-samples/ schema exactly.
  */
 export function buildGameJsonAgent(): NodeFunction {
   const llm = createOpenAIModel({ temperature: 0.1 });
+  const behaviorPropertySpecs = formatBehaviorPropertySpecsForPrompt();
+  const interactionPropertySpecs = formatInteractionPropertySpecsForPrompt();
 
   const systemPrompt = `Convert the final game specification into a complete game-config JSON. Output valid JSON only — no prose, no markdown fences.
+
+You receive the concept, rhetoric assignment (behavior/interaction types only), and recipe selection (condition types only).
+YOUR JOB: populate all numeric values, entity sizes, speeds, spawn parameters, condition thresholds, and inventory fields
+using the PROPERTY REFERENCE below. Pick values within the stated ranges to make the game feel balanced and playable.
+
+NUMERIC CONSTRAINTS (non-negotiable):
+- All speeds (speed, speedMin, speedMax): 50–200
+- Spawn intervalMs: 1000–4000
+- Spawn max (live instances): 3–10
+- SpawnAt offset / margin: 20–40
+- Player initialSize: 50–120 | minSize: 10–30 | maxSize: 200–400
+- Grow rate: 5–20 (size units per second)
+- Inventory slot max: 5–20
+- Timer durations: 30–120 seconds
+- Win/lose size thresholds must fall within the entity's minSize–maxSize range
+
+PROPERTY REFERENCE — BEHAVIORS:
+${behaviorPropertySpecs}
+
+PROPERTY REFERENCE — INTERACTIONS:
+${interactionPropertySpecs}
 
 SCHEMA:
 {
@@ -238,6 +260,8 @@ SCHEMA:
     // entity_property_threshold: { id, type, properties: { entity, property, operator, value }, result, message }
     // entity_count_threshold: { id, type, properties: { entity, operator, value }, result, message }
     // timer_elapsed: { id, type, properties: { seconds }, result, message }
+    // Derive entity ids and threshold values from the concept data and entity definitions above
+    // operator: ">=" or ">" for reach/exceed thresholds; "<=" or "<" for fall-to thresholds
   ],
   "ui": {
     "statusBars": [
