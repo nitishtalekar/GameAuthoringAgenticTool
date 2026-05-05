@@ -6,6 +6,7 @@ import {
   formatInteractionRhetoricsForPrompt,
 } from "@/data/micro-rhetorics";
 import { formatWinRecipesForPrompt, formatLoseRecipesForPrompt } from "@/data/recipes";
+import { formatEndConditionPropertySpecsForPrompt } from "@/data/end-condition-property-specs";
 import {
   formatBehaviorPropertySpecsForPrompt,
   formatInteractionPropertySpecsForPrompt,
@@ -201,6 +202,7 @@ export function buildGameJsonAgent(): NodeFunction {
   const llm = createOpenAIModel({ temperature: 0.1 });
   const behaviorPropertySpecs = formatBehaviorPropertySpecsForPrompt();
   const interactionPropertySpecs = formatInteractionPropertySpecsForPrompt();
+  const endConditionPropertySpecs = formatEndConditionPropertySpecsForPrompt();
 
   const systemPrompt = `Convert the final game specification into a complete game-config JSON. Output valid JSON only — no prose, no markdown fences.
 
@@ -208,69 +210,34 @@ You receive the concept, rhetoric assignment (behavior/interaction types only), 
 YOUR JOB: populate all numeric values, entity sizes, speeds, spawn parameters, condition thresholds, and inventory fields
 using the PROPERTY REFERENCE below. Pick values within the stated ranges to make the game feel balanced and playable.
 
-NUMERIC CONSTRAINTS (non-negotiable):
-- All speeds (speed, speedMin, speedMax): 50–200
-- Spawn intervalMs: 1000–4000
-- Spawn max (live instances): 3–10
-- SpawnAt offset / margin: 20–40
-- Player initialSize: 50–120 | minSize: 10–30 | maxSize: 200–400
-- Grow rate: 5–20 (size units per second)
-- Inventory slot max: 5–20
-- Timer durations: 30–120 seconds
-- Win/lose size thresholds must fall within the entity's minSize–maxSize range
-
 PROPERTY REFERENCE — BEHAVIORS:
 ${behaviorPropertySpecs}
 
 PROPERTY REFERENCE — INTERACTIONS:
 ${interactionPropertySpecs}
 
+PROPERTY REFERENCE — END CONDITIONS:
+${endConditionPropertySpecs}
+
 SCHEMA:
 {
   "meta": {
-    "title": "string",                          // short thematic title
-    "instructions": "string",                   // 1–2 sentences reflecting actual win/lose conditions
-    "canvas": { "width": 900, "height": 600, "background": "#hex" }  // dark thematic bg
+    "title": "string",
+    "instructions": "string",
+    "canvas": { "width": 900, "height": 600, "background": "#hex" }
   },
   "entities": [
     {
       "id": "lowercased_entity_name",
       "label": "1–4 char symbol",
-      "color": "#hex",                          // distinct vivid color per entity
-      // player entity: initialSize, minSize, maxSize, speed, initialPosition.anchor="center"
-      // spawned/chase entities: size, speedMin, speedMax, initialPosition.anchor="none"
-      // grow entities: initialSize, minSize, maxSize, initialPosition.anchor="fixed" + x/y
-      // if entity uses "collect" interaction: maxInventory: { "itemName": N }
+      "color": "#hex"
     }
   ],
-  "behaviors": [
-    // player_controlled: { entity, type, clampToCanvas: true }
-    // chase: { entity, type, clampToCanvas: false, properties: { target: "playerEntityId" } }
-    // spawn_on_timer (enemy): { entity, type, properties: { intervalMs, max, spawnAt: { anchor: "random_edge", offset: 30 }, speedMin, speedMax } }
-    // spawn_on_timer (collectible): { entity, type, properties: { intervalMs, max, spawnAt: { anchor: "random_canvas", margin: 30 }, speedMin: 0, speedMax: 0 } }
-    // spawn_on_start (static/fixed-count): { entity, type, properties: { count: N, spawnAt: { anchor: "random_canvas", margin: 30 } } }
-    // grow_over_time: { entity, type, properties: { property: "size", rate: N, clampToMax: true } }
-    // emit one behavior object per behavior per entity
-  ],
-  "interactions": [
-    { "entityA": "string", "entityB": "string", "type": "interactionType" }
-    // damage_on_item: add "options": { "item": "itemName", "amount": 1 }
-  ],
-  "endConditions": [
-    // winConditions → result: "won", loseConditions → result: "lost"
-    // entity_property_threshold: { id, type, properties: { entity, property, operator, value }, result, message }
-    // entity_count_threshold: { id, type, properties: { entity, operator, value }, result, message }
-    // timer_elapsed: { id, type, properties: { seconds }, result, message }
-    // Derive entity ids and threshold values from the concept data and entity definitions above
-    // operator: ">=" or ">" for reach/exceed thresholds; "<=" or "<" for fall-to thresholds
-  ],
+  "behaviors": [],
+  "interactions": [],
+  "endConditions": [],
   "ui": {
-    "statusBars": [
-      // player size: { label, source: "entity_size", entity, color, displayMode: "percent", min, max }
-      // timer: { label: "Time Left", source: "timer_remaining", color: "#ef4444", displayMode: "seconds", total }
-      // inventory: { label, source: "entity_inventory_item", entity, item, min: 0, max }
-      // include a bar for every meaningful metric visible to the player
-    ]
+    "statusBars": []
   }
 }`;
 
