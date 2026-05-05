@@ -14,8 +14,8 @@ import { CONFIG } from "@/utils/game-types";
 // Editor — JSON input with sample picker
 // ---------------------------------------------------------------------------
 
-function JsonEditor({ onPlay }: { onPlay: (config: CONFIG) => void }) {
-  const [jsonInput, setJsonInput] = useState("");
+function JsonEditor({ onPlay, initialJson = "" }: { onPlay: (config: CONFIG, json: string) => void; initialJson?: string }) {
+  const [jsonInput, setJsonInput] = useState(initialJson);
   const [parseError, setParseError] = useState<string | null>(null);
   const [selectedSample, setSelectedSample] = useState("");
 
@@ -34,7 +34,7 @@ function JsonEditor({ onPlay }: { onPlay: (config: CONFIG) => void }) {
     try {
       const parsed = JSON.parse(jsonInput);
       setParseError(null);
-      onPlay(parsed);
+      onPlay(parsed, jsonInput);
     } catch (e) {
       setParseError(`Invalid JSON: ${(e as Error).message}`);
     }
@@ -126,6 +126,7 @@ function JsonEditor({ onPlay }: { onPlay: (config: CONFIG) => void }) {
 
 export default function PlayPage() {
   const [config, setConfig] = useState<CONFIG | null>(null);
+  const [savedJson, setSavedJson] = useState("");
 
   return (
     <Box
@@ -144,7 +145,10 @@ export default function PlayPage() {
       {config ? (
         <GameRenderer config={config} onExit={() => setConfig(null)} />
       ) : (
-        <JsonEditor onPlay={(parsed) => setConfig(parsed)} />
+        <JsonEditor
+          initialJson={savedJson}
+          onPlay={(parsed, json) => { setSavedJson(json); setConfig(parsed); }}
+        />
       )}
     </Box>
   );

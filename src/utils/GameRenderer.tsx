@@ -134,12 +134,47 @@ export function GameRenderer({ config, onExit }: { config: CONFIG; onExit: () =>
         ctx.fillStyle = "rgba(0,0,0,0.55)";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.fillStyle = "#ffffff";
-        ctx.font = "bold 52px Arial";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText(msg, canvas.width / 2, canvas.height / 2 - 20);
+
+        // Shrink font until the message fits within the canvas width (with padding)
+        const maxTextWidth = canvas.width * 0.85;
+        let fontSize = 52;
+        ctx.font = `bold ${fontSize}px Arial`;
+        while (ctx.measureText(msg).width > maxTextWidth && fontSize > 14) {
+          fontSize -= 2;
+          ctx.font = `bold ${fontSize}px Arial`;
+        }
+
+        // Word-wrap the message if it still doesn't fit at minimum font size
+        const words = msg.split(" ");
+        const lines: string[] = [];
+        let currentLine = "";
+        for (const word of words) {
+          const testLine = currentLine ? `${currentLine} ${word}` : word;
+          if (ctx.measureText(testLine).width > maxTextWidth && currentLine) {
+            lines.push(currentLine);
+            currentLine = word;
+          } else {
+            currentLine = testLine;
+          }
+        }
+        if (currentLine) lines.push(currentLine);
+
+        const lineHeight = fontSize * 1.25;
+        const totalTextHeight = lines.length * lineHeight;
+        const subFont = 20;
+        const gap = 15;
+        const totalHeight = totalTextHeight + gap + subFont;
+        const startY = canvas.height / 2 - totalHeight / 2 + lineHeight / 2;
+
+        lines.forEach((line, i) => {
+          ctx.font = `bold ${fontSize}px Arial`;
+          ctx.fillText(line, canvas.width / 2, startY + i * lineHeight);
+        });
+
         ctx.font = "20px Arial";
-        ctx.fillText("Press Restart to play again", canvas.width / 2, canvas.height / 2 + 35);
+        ctx.fillText("Press Restart to play again", canvas.width / 2, startY + totalTextHeight - lineHeight / 2 + gap + subFont);
       }
 
       animRef.current = requestAnimationFrame(loop);

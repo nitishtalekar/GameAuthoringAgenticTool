@@ -226,8 +226,13 @@ export default function Home() {
               displayEmpty
               value=""
               onChange={(e) => {
-                if ((e.target.value as string) === "occupy") {
+                const val = e.target.value as string;
+                if (val === "occupy") {
                   setInputText(`On the six month anniversary of the Occupy Wall Street movement, protesters returned to New York's Zuccotti Park and several were arrested. The occupiers are obstructing Wall Street and are being arrested by police, but Wall Street is also growing the occupy movement.`);
+                } else if (val === "virus") {
+                  setInputText(`A new virus is rapidly spreading through the city's population. Health workers are racing to vaccinate citizens before the virus overwhelms the hospitals. Meanwhile, the virus mutates to resist treatment, but vaccination campaigns are slowly containing its spread.`);
+                } else if (val === "election") {
+                  setInputText(`Two rival candidates are battling for votes in a heated election. Campaign workers are canvassing neighborhoods to win over undecided voters. The media amplifies both candidates' messages, but misinformation spread by bots is confusing voters and eroding trust in the election.`);
                 }
               }}
               sx={{
@@ -242,6 +247,8 @@ export default function Home() {
             >
               <MenuItem value="" disabled sx={{ color: "#94a3b8", fontSize: 13 }}>— load example —</MenuItem>
               <MenuItem value="occupy" sx={{ fontSize: 13 }}>Occupy Wall Street</MenuItem>
+              <MenuItem value="virus" sx={{ fontSize: 13 }}>City Virus Outbreak</MenuItem>
+              <MenuItem value="election" sx={{ fontSize: 13 }}>Election Campaign</MenuItem>
             </Select>
           </Box>
           <textarea
